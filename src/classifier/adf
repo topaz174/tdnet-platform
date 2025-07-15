@@ -1,0 +1,51 @@
+I’m building a financial intelligence platform focused on TDnet disclosures, which includes both quantitative data (financial facts from XBRLs) and qualitative data (text from XBRLs and PDFs). My core architecture consists of:
+
+    A PostgreSQL database that stores structured financial facts and raw disclosures.
+
+    An XBRL parser that parses all numeric facts from summary and attachment files.
+
+    A PDF/text parser for qualitative chunks, handled separately by a collaborator.
+
+    A classification layer that categorizes disclosures.
+
+    An ingestion layer that scrapes and processes disclosures in near-real time
+
+What’s happened:
+
+Originally, my repo (@/tdnet_scraper  ) was just a scraper with some classification logic, with limited database scope (just the disclosures table). My collaborator forked this and made some changes, adding two extra tables: companies (with more detailed company metadata) and text_chunks (for qualitative data from PDFs/XBRLs).
+
+Meanwhile, I massively expanded my repo to handle full XBRL parsing (attachments, corrections, context handling, extensions, etc.), adding 29 migration files, multiple new tables like xbrl_filings, financial_facts, concepts, etc., and heavy refactors to the database schema.
+The current situation:
+
+We both have diverged database schemas and separate ETL logic — I handle quantitative (numeric) data, and my collaborator handles qualitative (narrative) data. his work is in @/FinancialIntelligence which contains the qualitative data extraction: @unified_extraction_pipeline.py , @xbrl_qualitative_extractor.py , @pdf_extraction_pipeline.py etc. Now we want to merge everything into one unified repo, which is the current base directory (tdnet-platform), and load the src files into their appropriate places in @/src  (and then synchronize our databases for a unified ingestion pipeline, which we will do later)
+Final Directory Structure:
+
+I decided to use a single directory structured something like this:
+
+tdnet-platform/
+├── src/
+│   ├── scraper/           # TDnet scraping logic
+│   ├── classifier/            # Disclosure classification
+│   ├── qualitative/            # narrative facts from pdfs and xbrls
+│   ├── quantitative/            # numeric data from xbrl tables
+│   ├── database/              # Migrations, views, data models
+│   ├── utils/                 # Shared utilities
+├── README.md
+
+This keeps ingestion modular by data type, with a shared database and classification layer. Note this is just the draft plan. the final strucuter will be more comprehensive, and there will be subfolders inside each folder, such as migrations in database/, etc.
+
+so i want you to read the files in @/tdnet_scraper  (which is misleading title as its not just a scraper anymore) and @/FinancialIntelligence  to devise a comprehensive new repo/directory structure for this project. once you have gotten a gist of the files, please think about the optimal, best practice, industry standard directory structure, expanding on the current makeshift structure. please write a comprehensive plan, and then write a python script that will move the files into the new structure. ensure that this moving process also changes the file paths in the code (.parent.parent stuff) appropriately, and that the code still runs fine. additionally, make this a github repo and make sure to commit all the changes to it as initial commit so that i can save the current structure backup just in case..
+
+please think as comprehensively, structurally and logically as possible for the new dir structure. think about what belongs where, what belongs in which folder. this will eventually become the app that we deploy, with a folder called interface/ in src/, so think long term.
+do not worry about the database migrations yet. we will deal with that later. for now just focus on the directory structure. do not make any migration files unless they are absolutely necessary.
+
+note that most files in @/FinancialIntelligence are junk. The essential files for qualitative data extraction are:
+src/unified_extraction_pipeline.py - Main pipeline
+src/xbrl_qualitative_extractor.py - XBRL processing
+src/pdf_extraction_pipeline.py - PDF processing
+src/parallel_pdf_extraction_pipeline.py - Parallel processing
+financial_data_extraction_agent.py - Data extraction
+advanced_financial_analytics.py - Analytics
+enhanced_retrieval_system.py - Retrieval system
+
+so just put these in their appropriate places in @/src/qualitative/. for tdnet_scraper, all files are essential and to be considered, but again, theyre not all scraper files, so please distribute them appropriately to their appropriate folders, such as quantitative for xbrl parsing, scraper for scraping, etc.

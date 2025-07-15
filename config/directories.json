@@ -1,0 +1,7 @@
+{
+    "pdf_directory": "C:\\Users\\Alex\\Desktop\\Internship\\tdnet_scraper\\downloads\\pdfs",
+    "xbrls_directory": "F:\\TEMP\\tdnet_xbrls",
+    "backup_directory": "C:\\Users\\Alex\\Desktop\\Internship\\tdnet_scraper\\backups",
+    "tdnet_search_pdf_directory": "pdfs_tdnet_search",
+    "tdnet_search_xbrl_directory": "xbrls_tdnet_search"
+}

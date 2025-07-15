@@ -1,0 +1,65 @@
+{
+    "annual": {
+        "duration": [
+            "CurrentYearDuration_ConsolidatedMember_ResultMember",
+            "CurrentYearDuration_ResultMember",
+            "CurrentYearDuration",
+            "CurrentYearDuration_ConsolidatedMember"
+        ],
+        "instant": [
+            "CurrentYearInstant",
+            "CurrentYearInstant_ConsolidatedMember_ResultMember",
+            "CurrentYearInstant_ResultMember",
+            "CurrentYearInstant_ConsolidatedMember",
+            "FilingDateInstant"
+        ]
+    },
+    "q1": {
+        "duration": [
+            "CurrentAccumulatedQ1Duration_ConsolidatedMember_ResultMember",
+            "CurrentAccumulatedQ1Duration_ResultMember",
+            "CurrentAccumulatedQ1Duration",
+            "CurrentAccumulatedQ1Duration_ConsolidatedMember",
+            "CurrentQ1Duration_ConsolidatedMember_ResultMember"
+        ],
+        "instant": [
+            "CurrentAccumulatedQ1Instant",
+            "CurrentAccumulatedQ1Instant_ConsolidatedMember_ResultMember",
+            "CurrentAccumulatedQ1Instant_ResultMember",
+            "CurrentAccumulatedQ1Instant_ConsolidatedMember"
+        ]
+    },
+    "q2": {
+        "duration": [
+            "CurrentAccumulatedQ2Duration_ConsolidatedMember_ResultMember",
+            "CurrentAccumulatedQ2Duration_ResultMember",
+            "CurrentAccumulatedQ2Duration",
+            "CurrentAccumulatedQ2Duration_ConsolidatedMember",
+            "CurrentQ2Duration_ConsolidatedMember_ResultMember",
+            "CurrentAccumulatedHalfYearDuration_ConsolidatedMember_ResultMember"
+        ],
+        "instant": [
+            "CurrentAccumulatedQ2Instant",
+            "CurrentAccumulatedQ2Instant_ConsolidatedMember_ResultMember",
+            "CurrentAccumulatedQ2Instant_ResultMember",
+            "CurrentAccumulatedQ2Instant_ConsolidatedMember",
+            "CurrentAccumulatedHalfYearInstant",
+            "CurrentAccumulatedHalfYearInstant_ConsolidatedMember_ResultMember"
+        ]
+    },
+    "q3": {
+        "duration": [
+            "CurrentAccumulatedQ3Duration_ConsolidatedMember_ResultMember",
+            "CurrentAccumulatedQ3Duration_ResultMember",
+            "CurrentAccumulatedQ3Duration",
+            "CurrentAccumulatedQ3Duration_ConsolidatedMember",
+            "CurrentQ3Duration_ConsolidatedMember_ResultMember"
+        ],
+        "instant": [
+            "CurrentAccumulatedQ3Instant",
+            "CurrentAccumulatedQ3Instant_ConsolidatedMember_ResultMember",
+            "CurrentAccumulatedQ3Instant_ResultMember",
+            "CurrentAccumulatedQ3Instant_ConsolidatedMember"
+        ]
+    }
+} 
