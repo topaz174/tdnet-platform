@@ -39,12 +39,21 @@ psql -d tdnet -f scripts/create_reference_tables.sql
 #### Python Script (Recommended)
 
 ```bash
+# Using current system user (recommended for local development)
+python scripts/create_reference_tables.py
+
+# Specify individual connection parameters
+python scripts/create_reference_tables.py --user alex --host localhost --database tdnet
+
+# With password authentication
+python scripts/create_reference_tables.py --user alex --password your_password
+
 # Using environment variable for database URL
-export DATABASE_URL="postgresql://user:password@localhost/tdnet"
+export DATABASE_URL="postgresql://alex:password@localhost/tdnet"
 python scripts/create_reference_tables.py
 
 # Or specify database URL directly
-python scripts/create_reference_tables.py --database-url "postgresql://user:password@localhost/tdnet"
+python scripts/create_reference_tables.py --database-url "postgresql://alex:password@localhost/tdnet"
 
 # Force creation (skip existing tables check)
 python scripts/create_reference_tables.py --force
@@ -67,6 +76,24 @@ pip install psycopg2-binary
 
 - `DATABASE_URL` - PostgreSQL connection string
 - `TDNET_DB_URL` - Alternative database URL variable
+
+### PostgreSQL Authentication
+
+The script supports different authentication methods:
+
+1. **Peer Authentication** (Recommended for local development)
+   - Uses current system user (e.g., `alex`)
+   - No password required
+   - Configured in `pg_hba.conf` with `local all all peer`
+
+2. **Password Authentication**
+   - Specify user and password explicitly
+   - Use `--user` and `--password` arguments
+   - Or include in `DATABASE_URL`
+
+3. **Trust Authentication**
+   - No authentication required
+   - Use with `--user` argument only
 
 ### Features
 

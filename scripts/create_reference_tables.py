@@ -39,9 +39,15 @@ def get_database_url():
         db_url = os.getenv('TDNET_DB_URL')
     
     if not db_url:
-        # Default for local development
-        db_url = "postgresql://postgres:password@localhost/tdnet"
-        print(f"No DATABASE_URL found, using default: {db_url}")
+        # Get current system user for database connection
+        import getpass
+        current_user = getpass.getuser()
+        
+        # Default for local development using current user
+        db_url = f"postgresql://{current_user}@localhost/tdnet"
+        print(f"No DATABASE_URL found, using current user '{current_user}': {db_url}")
+        print("Note: This assumes PostgreSQL is configured for peer authentication.")
+        print("If you need password authentication, set DATABASE_URL environment variable.")
     
     return db_url
 
@@ -138,6 +144,24 @@ def main():
         help='PostgreSQL database URL (default: from DATABASE_URL env var)'
     )
     parser.add_argument(
+        '--user',
+        help='Database user (default: current system user)'
+    )
+    parser.add_argument(
+        '--password',
+        help='Database password (if required)'
+    )
+    parser.add_argument(
+        '--host',
+        default='localhost',
+        help='Database host (default: localhost)'
+    )
+    parser.add_argument(
+        '--database',
+        default='tdnet',
+        help='Database name (default: tdnet)'
+    )
+    parser.add_argument(
         '--force', 
         action='store_true',
         help='Skip existing tables check'
@@ -155,7 +179,15 @@ def main():
     
     try:
         # Get database URL
-        db_url = args.database_url or get_database_url()
+        if args.database_url:
+            db_url = args.database_url
+        else:
+            # Build database URL from individual components
+            import getpass
+            user = args.user or getpass.getuser()
+            password_part = f":{args.password}" if args.password else ""
+            db_url = f"postgresql://{user}{password_part}@{args.host}/{args.database}"
+        
         logger.info(f"Database URL: {db_url.split('@')[1] if '@' in db_url else db_url}")
         
         # Check existing tables unless forced
