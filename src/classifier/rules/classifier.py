@@ -21,7 +21,7 @@ from src.database.utils.init_db import (
     Disclosure, DisclosureCategory, DisclosureSubcategory, 
     DisclosureLabel, engine
 )
-from src.classifier.rules.classification_rules import SUBCATEGORY_RULES, PARENT_CATEGORY_RULES, SUBCATEGORY_TO_PARENT
+from src.classifier.rules.rules import SUBCATEGORY_RULES, PARENT_CATEGORY_RULES, SUBCATEGORY_TO_PARENT
 
 
 # ============================================================================

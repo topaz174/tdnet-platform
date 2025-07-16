@@ -12,7 +12,7 @@ sys.path.insert(0, str(project_root))
 
 from sqlalchemy.orm import sessionmaker
 from src.database.utils.init_db import Disclosure, DisclosureLabel, engine
-from src.classifier.rules.tdnet_classifier import classify_and_store_labels, classify_disclosure_title
+from src.classifier.rules.classifier import classify_and_store_labels, classify_disclosure_title
 
 # ============================================================================
 # CONFIGURATION

@@ -2,6 +2,8 @@
 -- This script creates the reference tables that will serve as the baseline for migrations
 -- Tables: company_master, disclosures, document_chunks
 
+SET search_path TO public;
+
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
