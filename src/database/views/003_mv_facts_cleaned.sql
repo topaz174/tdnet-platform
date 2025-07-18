@@ -96,8 +96,8 @@ ranked_facts AS (
 SELECT
   /* identification */
   rf.fact_id,
-  c.company_code AS ticker,
-  c.name_en AS company_name,
+  c.ticker AS ticker,
+  c.company_name_english AS company_name_en,
 
   /* period */
   rf.period_start,

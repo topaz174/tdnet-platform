@@ -75,6 +75,26 @@ python src/quantitative/etl/load_facts.py
 
 ## Database Setup
 
+### Migrations
+
+To apply all database schema changes:
+
+```bash
+python scripts/run_migrations.py
+```
+
+This will run all SQL migration files in `src/database/migrations/` in alphabetical order.
+
+### Seeds
+
+To populate the database with initial data:
+
+```bash
+python scripts/run_seeds.py
+```
+
+This will run all Python seed files in `src/database/seeds/` in alphabetical order.
+
 ### Reference Tables
 
 To create/populate reference tables (concepts, units, etc.):
@@ -83,4 +103,22 @@ To create/populate reference tables (concepts, units, etc.):
 python scripts/create_reference_tables.py
 ```
 
-This is a one-time setup that should be run before the XBRL ETL pipeline. 
+This is a one-time setup that should be run before the XBRL ETL pipeline.
+
+### Complete Setup
+
+For a complete database setup, run in this order:
+
+```bash
+# 1. Apply schema migrations
+python scripts/run_migrations.py
+
+# 2. Populate with seed data
+python scripts/run_seeds.py
+
+# 3. Create reference tables
+python scripts/create_reference_tables.py
+
+# 4. Run XBRL ETL pipeline
+python scripts/run_xbrl_etl_pipeline.py
+``` 

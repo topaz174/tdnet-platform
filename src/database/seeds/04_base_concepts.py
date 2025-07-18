@@ -17,7 +17,7 @@ project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # JSON file path (modify this as needed)
-JSON_FILE_PATH = "/home/alex/dev/tdnet-platform/data/xsd_elements_organized.json"
+JSON_FILE_PATH = "/home/alex/dev/tdnet-platform/config/data/xsd_elements_universal.json"
 
 # Import unified config
 from config.config import DB_URL

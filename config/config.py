@@ -12,7 +12,7 @@ DB_CONFIG = {
     'password': os.environ['TDNET_DB_PASSWORD'],
     'host': os.environ['TDNET_DB_HOST'],
     'port': os.environ['TDNET_DB_PORT'],
-    'database': os.environ['TDNET_DB_NAME']
+    'database': 'full_test'
 }
 
 

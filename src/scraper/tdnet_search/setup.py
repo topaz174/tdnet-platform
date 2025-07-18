@@ -13,7 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from scraper.tdnet_search.init_db_search import Base, engine
+from src.scraper.tdnet_search.init_db import Base, engine
 from config.config_tdnet_search import DB_CONFIG_SEARCH
 
 def create_database():

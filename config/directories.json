@@ -1,7 +1,7 @@
 {
     "pdf_directory": "/home/alex/pdfs",
-    "xbrls_directory": "/home/alex/xbrls",
-    "backup_directory": "/home/alex/backup",
+    "xbrls_directory": "/home/alex/dev/tdnet-platform/downloads/xbrls",
+    "backup_directory": "/home/alex/dev/tdnet-platform/downloads/backup",
     "tdnet_search_pdf_directory": "/home/alex/xbrls/pdfs_tdnet_search",
     "tdnet_search_xbrl_directory": "/home/alex/xbrls/xbrls_tdnet_search"
 }

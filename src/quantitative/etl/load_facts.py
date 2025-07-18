@@ -57,7 +57,7 @@ logs_dir.mkdir(exist_ok=True)
 def setup_error_logging():
     """Setup error logging with timestamp-based log file."""
     log_file = logs_dir / f"failed_facts_loading_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    
+
     # Create logger
     error_logger = logging.getLogger(f"{__name__}_errors")
     error_logger.setLevel(logging.ERROR)
@@ -65,18 +65,18 @@ def setup_error_logging():
     # Avoid duplicate handlers
     if error_logger.handlers:
         return error_logger
-    
+
     # Create formatters
     detailed_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    
+
     # File handler (detailed, includes ERROR)
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(logging.ERROR)
     file_handler.setFormatter(detailed_formatter)
-    
+
     # Add handlers to logger
     error_logger.addHandler(file_handler)
-    
+
     # Prevent duplicate logging
     error_logger.propagate = False
     

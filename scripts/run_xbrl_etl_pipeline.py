@@ -20,6 +20,9 @@ This approach ensures that:
 import argparse
 import sys
 import time
+import os
+import io
+from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -115,54 +118,70 @@ class XBRLETLOrchestrator:
             session.close()
             
             total_disclosures = len(disclosures)
-            print(f"Found {total_disclosures} unprocessed XBRL disclosures")
-            
             if total_disclosures == 0:
                 print("No unprocessed disclosures found. Pipeline complete.")
                 return stats
             
-            print("\nStarting sequential processing...")
+            print(f"Found {total_disclosures} unprocessed XBRL disclosures")
+            print("Starting sequential processing...")
             print("-" * 80)
             
             # Process each disclosure sequentially
             for idx, disclosure in enumerate(disclosures, 1):
                 filing_start = time.time()
                 
-                print(f"\n[{idx}/{total_disclosures}] Processing {disclosure.company_code}: {disclosure.title[:60]}...")
+                print(f"[{idx}/{total_disclosures}] {disclosure.company_code}: {disclosure.title[:60]}...")
                 
-                # Step 1: Load the filing
+                # Step 1: Load the filing (suppress output)
                 try:
-                    filing_count = self.filing_loader.load_filings(
-                        company_code=disclosure.company_code
-                    )
+                    # Capture and suppress output from filing loader
+                    with redirect_stdout(io.StringIO()) as filing_stdout, redirect_stderr(io.StringIO()) as filing_stderr:
+                        filing_count = self.filing_loader.load_filings(
+                            company_code=disclosure.company_code
+                        )
                     
                     if filing_count > 0:
                         stats['filings_processed'] += 1
+                        print(f"  ✓ Filing loaded")
                         
-                        # Step 2: Load facts for this filing
+                        # Step 2: Load facts for this filing (suppress output)
                         try:
-                            facts_count = self.facts_loader.load_facts(
-                                company_code=disclosure.company_code
-                            )
+                            with redirect_stdout(io.StringIO()) as facts_stdout, redirect_stderr(io.StringIO()) as facts_stderr:
+                                facts_count = self.facts_loader.load_facts(
+                                    company_code=disclosure.company_code
+                                )
                             stats['facts_loaded'] += facts_count
                             
+                            # Check for extension concepts in the captured output
+                            facts_output = facts_stdout.getvalue()
+                            extension_count = 0
+                            if "Added" in facts_output and "extension concepts" in facts_output:
+                                # Extract extension count from output like "Added 14 extension concepts"
+                                import re
+                                ext_match = re.search(r'Added (\d+) extension concepts', facts_output)
+                                if ext_match:
+                                    extension_count = int(ext_match.group(1))
+                            
                             filing_time = time.time() - filing_start
-                            print(f"  ✓ Filing loaded, {facts_count} facts loaded ({filing_time:.1f}s)")
+                            if extension_count > 0:
+                                print(f"  ✓ {facts_count} facts, {extension_count} extensions ({filing_time:.1f}s)")
+                            else:
+                                print(f"  ✓ {facts_count} facts ({filing_time:.1f}s)")
                             
                         except Exception as e:
                             stats['facts_failed'] += 1
-                            print(f"  ✗ Facts loading failed: {e}")
+                            print(f"  ✗ Facts failed: {e}")
                             
                     else:
                         stats['filings_failed'] += 1
-                        print(f"  ✗ Filing loading failed")
+                        print(f"  ✗ Filing failed")
                         
                 except Exception as e:
                     stats['filings_failed'] += 1
-                    print(f"  ✗ Filing loading error: {e}")
+                    print(f"  ✗ Filing error: {e}")
                 
-                # Progress update every 10 filings
-                if idx % 10 == 0:
+                # Progress update every 100 filings
+                if idx % 100 == 0:
                     elapsed = time.time() - start_time
                     rate = idx / elapsed if elapsed > 0 else 0
                     eta = (total_disclosures - idx) / rate if rate > 0 else 0
@@ -210,7 +229,7 @@ def main():
     
     orchestrator = XBRLETLOrchestrator()
     stats = orchestrator.run_pipeline(
-        company_code=args.company,
+        company_code=args.code,
         batch_size=args.batch_size
     )
     

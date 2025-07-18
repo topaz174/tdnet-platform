@@ -11,10 +11,10 @@ from pathlib import Path
 from datetime import datetime
 
 # Add the project root to the Python path
-project_root = Path(__file__).resolve().parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from scraper.tdnet_search.init_db_search import Base, engine, Disclosure
+from src.scraper.tdnet_search.init_db import Base, engine, Disclosure
 from sqlalchemy.orm import sessionmaker
 
 def load_directory_config():

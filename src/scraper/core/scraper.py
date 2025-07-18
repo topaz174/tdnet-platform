@@ -19,9 +19,16 @@ from sqlalchemy.orm import sessionmaker
 from src.database.utils.init_db import Disclosure, DisclosureCategory, DisclosureSubcategory, DisclosureLabel, Base, engine
 from src.classifier.rules.classifier import classify_disclosure_title, classify_and_store_labels
 
+# Import XBRL ETL pipeline components
+from src.quantitative.etl.load_xbrl_filings import XBRLFilingLoader
+from src.quantitative.etl.load_facts import FactsLoader
 
 Session = sessionmaker(bind=engine)
 session = Session()
+
+# Initialize XBRL loaders (reused across multiple disclosures)
+xbrl_filing_loader = XBRLFilingLoader()
+facts_loader = FactsLoader()
 
 def sanitize_filename(filename):
     """
@@ -134,6 +141,80 @@ def download_xbrl(url, save_path):
                 pass
         return False
 
+def download_xbrl_quiet(url, save_path):
+    """
+    Download XBRL from URL and save to specified path without verbose messaging.
+    
+    Args:
+        url (str): URL of the XBRL file
+        save_path (str): Path to save the XBRL file
+        
+    Returns:
+        bool: True if download was successful, False otherwise
+    """
+    try:
+        # Skip if file already exists
+        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+            return True
+            
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "application/xbrl+xml,application/xml,*/*"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        with open(save_path, 'wb') as f:
+            f.write(response.content)
+        
+        file_size = os.path.getsize(save_path)
+        if file_size > 0:
+            print(f"Successfully downloaded XBRL: {file_size} bytes")
+            return True
+        else:
+            os.remove(save_path)  # Remove empty file
+            return False
+            
+    except Exception as e:
+        if os.path.exists(save_path):
+            try:
+                os.remove(save_path)  # Remove incomplete file
+            except:
+                pass
+        return False
+
+def _update_disclosure_xbrl_status(company_code, disclosure_date, title, has_xbrl, xbrl_path):
+    """
+    Update the has_xbrl status and xbrl_path for a disclosure in the database.
+    
+    Args:
+        company_code (str): Company code
+        disclosure_date (date): Disclosure date
+        title (str): Disclosure title
+        has_xbrl (bool): Whether XBRL is available
+        xbrl_path (str): Path to XBRL file
+    """
+    db_session = Session()
+    try:
+        disclosure = db_session.query(Disclosure).filter_by(
+            company_code=company_code,
+            disclosure_date=disclosure_date,
+            title=title
+        ).first()
+        
+        if disclosure:
+            disclosure.has_xbrl = has_xbrl
+            disclosure.xbrl_path = xbrl_path
+            db_session.commit()
+    except Exception as e:
+        db_session.rollback()
+        print(f"Warning: Failed to update XBRL status: {e}")
+    finally:
+        db_session.close()
+
 def get_date_range(days=30):
     """
     Get a range of dates from today back to the specified number of days.
@@ -187,6 +268,8 @@ def add_disclosure_to_db(disclosure_data):
             except Exception as e:
                 print(f"Warning: Failed to classify disclosure {disclosure.id}: {e}")
                 # Don't fail the whole operation if classification fails
+            
+
             
             return True
         else:
@@ -392,14 +475,16 @@ def scrape_tdnet_for_date(date_str, check_existing=True, min_time=None, max_time
                 pdf_filename = f"{safe_time}_{company_code}_{sanitized_title}.pdf"
                 pdf_path = os.path.join(pdf_dir, pdf_filename)
                 
-                pdf_downloaded = download_pdf(pdf_url, pdf_path)
+                # First, prepare all the data
+                hour, minute = map(int, disclosure_time.split(':'))
+                disclosure_time_obj = datetime.now().replace(hour=hour, minute=minute, second=0).time()
                 
                 xbrl_cell = cells[4]
                 xbrl_link = None
                 if isinstance(xbrl_cell, Tag):
                     xbrl_link = xbrl_cell.find('a', {'class': 'style002'})
                 
-                # Download XBRL if available
+                # Prepare XBRL URL info
                 xbrl_url = None
                 xbrl_path = None
                 has_xbrl = False
@@ -408,42 +493,74 @@ def scrape_tdnet_for_date(date_str, check_existing=True, min_time=None, max_time
                     xbrl_relative_url = xbrl_link.get('href')
                     if isinstance(xbrl_relative_url, str):
                         xbrl_url = f"{base_url}{xbrl_relative_url}"
-                        
-                    xbrl_filename = f"{safe_time}_{company_code}_{sanitized_title}.zip"
-                    xbrl_file_path = os.path.join(xbrl_dir, xbrl_filename)
-                    
-                    if download_xbrl(xbrl_url, xbrl_file_path):
-                        xbrl_path = xbrl_file_path
+                        xbrl_filename = f"{safe_time}_{company_code}_{sanitized_title}.zip"
+                        xbrl_path = os.path.join(xbrl_dir, xbrl_filename)
+                
+                disclosure_data = {
+                    'disclosure_date': disclosure_date,
+                    'time': disclosure_time_obj,
+                    'company_code': company_code,
+                    'company_name': company_name,
+                    'title': title,
+                    'xbrl_url': xbrl_url,
+                    'xbrl_path': xbrl_path,
+                    'pdf_path': pdf_path,
+                    'exchange': exchange,
+                    'update_history': update_history,
+                    'page_number': page,
+                    'has_xbrl': False  # Will be updated after XBRL download
+                }
+                
+                # Add to database first (with has_xbrl as False initially)
+                if add_disclosure_to_db(disclosure_data):
+                    added_to_db_count += 1
+                
+                # Then download files in order with proper messaging
+                pdf_downloaded = download_pdf(pdf_url, pdf_path)
+                
+                # Download XBRL if available (with suppressed redundant messaging)
+                if xbrl_url:
+                    if download_xbrl_quiet(xbrl_url, xbrl_path):
                         has_xbrl = True
-                        print(f"Successfully downloaded XBRL for: {company_code} - {title}")
-                    else:
-                        print(f"Failed to download XBRL for: {company_code} - {title}")
+                        # Update the disclosure in database with has_xbrl = True
+                        _update_disclosure_xbrl_status(disclosure_data['company_code'], 
+                                                     disclosure_data['disclosure_date'], 
+                                                     disclosure_data['title'], 
+                                                     True, xbrl_path)
+                        
+                        # Process XBRL ETL pipeline immediately
+                        try:
+                            # Suppress verbose output by temporarily redirecting stdout
+                            import io
+                            import contextlib
+                            
+                            with contextlib.redirect_stdout(io.StringIO()) as captured_output:
+                                # Load XBRL filing and sections
+                                filings_loaded = xbrl_filing_loader.load_filings(company_code=company_code)
+                                facts_loaded = 0
+                                if filings_loaded > 0:
+                                    # Load facts from the filing
+                                    facts_loaded = facts_loader.load_facts(company_code=company_code)
+                            
+                            # Parse the captured output to extract the key info
+                            output_lines = captured_output.getvalue().strip().split('\n')
+                            filing_info = None
+                            for line in output_lines:
+                                if "✓ Loaded filing and sections for" in line:
+                                    # Extract just the company and quarter info
+                                    filing_info = line.strip().split("✓ Loaded filing and sections for ")[-1]
+                                    break
+                            
+                            if filings_loaded > 0 and filing_info:
+                                print(f"  ✓ Loaded filing and sections for {filing_info}")
+                                if facts_loaded > 0:
+                                    print(f"  ✓ {facts_loaded} facts loaded")
+                        except Exception as e:
+                            print(f"  Warning: XBRL ETL pipeline failed for {company_code}: {e}")
                 
                 if pdf_downloaded:
-                    hour, minute = map(int, disclosure_time.split(':'))
-                    disclosure_time_obj = datetime.now().replace(hour=hour, minute=minute, second=0).time()
-                    
-                    disclosure_data = {
-                        'disclosure_date': disclosure_date,
-                        'time': disclosure_time_obj,
-                        'company_code': company_code,
-                        'company_name': company_name,
-                        'title': title,
-                        'xbrl_url': xbrl_url,  # Set the XBRL URL if available
-                        'xbrl_path': xbrl_path,  # Set the downloaded XBRL path
-                        'pdf_path': pdf_path,
-                        'exchange': exchange,
-                        'update_history': update_history,
-                        'page_number': page,
-                        'has_xbrl': has_xbrl  # Set based on successful XBRL download
-                    }
-                    
-                    # Add to database immediately after downloading the PDF
-                    if add_disclosure_to_db(disclosure_data):
-                        added_to_db_count += 1
-                    
+                    disclosure_data['has_xbrl'] = has_xbrl  # Update the final status
                     all_disclosures.append(disclosure_data)
-                    print(f"Added disclosure: {company_code} - {title}")
                     
                     
                     time.sleep(0.5)

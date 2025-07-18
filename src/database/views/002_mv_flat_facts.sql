@@ -16,8 +16,8 @@ CREATE MATERIALIZED VIEW mv_flat_facts AS
 SELECT
     /* identification */
   f.id AS fact_id,
-  c.company_code AS ticker,
-  c.name_en AS company_name,
+  c.ticker AS ticker,
+  c.company_name_english AS company_name_en,
 
     /* period */
   xf.period_start,

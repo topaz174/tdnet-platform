@@ -247,7 +247,6 @@ def process_extension_taxonomy(pkg_root, company_code: str, session, concept_cac
     taxonomy_files = _find_extension_taxonomy_files_in_package(pkg_root, company_code)
     
     if not taxonomy_files['xsd']:
-        logger.info(f"No extension XSD found for company {company_code} - skipping extension processing")
         return new_concepts
 
     # Parse core data
@@ -255,7 +254,6 @@ def process_extension_taxonomy(pkg_root, company_code: str, session, concept_cac
         concepts_map = _parse_extension_xsd_content(fh.read())
 
     if not concepts_map:
-        logger.error(f"Failed to parse any concepts from XSD for company {company_code}")
         return new_concepts
 
     labels_ja: Dict[str, str] = {}

@@ -19,6 +19,7 @@ from datetime import datetime
 import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from typing import Optional
 
 # Add project root to path
 project_root = Path(__file__).resolve().parent.parent.parent.parent
@@ -68,7 +69,7 @@ def update_has_xbrl_for_disclosure(session, disclosure_id: int, has_xbrl: bool):
         return False
 
 
-def update_all_has_xbrl(dry_run: bool = False, limit: int = None):
+def update_all_has_xbrl(dry_run: bool = False, limit: Optional[int] = None):
     """
     Update has_xbrl for all disclosures based on file existence.
     
@@ -182,8 +183,12 @@ def get_has_xbrl_statistics():
         
         logger.info(f"Current has_xbrl Statistics:")
         logger.info(f"  Total disclosures: {total}")
-        logger.info(f"  has_xbrl = true: {has_xbrl_count} ({has_xbrl_count/total*100:.1f}%)")
-        logger.info(f"  has_xbrl = false: {no_xbrl_count} ({no_xbrl_count/total*100:.1f}%)")
+        if total:
+            logger.info(f"  has_xbrl = true: {has_xbrl_count} ({has_xbrl_count/total*100:.1f}%)")
+            logger.info(f"  has_xbrl = false: {no_xbrl_count} ({no_xbrl_count/total*100:.1f}%)")
+        else:
+            logger.info(f"  has_xbrl = true: {has_xbrl_count}")
+            logger.info(f"  has_xbrl = false: {no_xbrl_count}")
         
         return total, has_xbrl_count, no_xbrl_count
         
