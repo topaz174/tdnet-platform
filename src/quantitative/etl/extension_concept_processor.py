@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Load concepts from xsd_elements_universal_with_labels.json into the concepts table.
+Extension taxonomy concept processor for XBRL ETL.
+
+This module handles the processing of company-specific extension taxonomies
+found in XBRL filings, extracting concepts and labels from XSD and label files.
 """
 
 import json
@@ -15,16 +18,14 @@ from dateutil.parser import parse as dt_parse
 from zipfile import ZipFile, Path as ZipPath
 
 try:
-    from lxml import etree
+    from lxml import etree  # type: ignore
     HAS_LXML = True
 except ImportError:
     HAS_LXML = False
 
-# Add parent directories to path for imports
-current_dir = Path(__file__).resolve().parent
-src_dir = current_dir.parent
-root_dir = src_dir.parent
-sys.path.extend([str(src_dir), str(root_dir)])
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -85,9 +86,9 @@ def _find_extension_taxonomy_files_in_package(pkg_root, company_code: str) -> Di
     return files
 
 
-def _parse_extension_xsd_content(content: bytes) -> Dict[str, str]:
+def _parse_extension_xsd_content(content: bytes) -> Dict[str, Optional[str]]:
     """Return mapping of local_name → item_type for concepts defined in an XSD (vendor-agnostic)."""
-    concepts: Dict[str, str] = {}
+    concepts: Dict[str, Optional[str]] = {}
 
     EXCLUDED_TYPES = {
         'stringitemtype', 'textblockitemtype', 'dateitemtype', 'anyuriitemtype',
@@ -125,7 +126,7 @@ def _parse_extension_xsd_content(content: bytes) -> Dict[str, str]:
             elif 'boolean' in item_type_token:
                 item_type = 'boolean'
 
-            if name:
+            if name and item_type is not None:
                 concepts[name] = item_type
 
     except Exception as exc:
@@ -246,7 +247,7 @@ def process_extension_taxonomy(pkg_root, company_code: str, session, concept_cac
     taxonomy_files = _find_extension_taxonomy_files_in_package(pkg_root, company_code)
     
     if not taxonomy_files['xsd']:
-        logger.error(f"No extension XSD found for company {company_code}")
+        logger.info(f"No extension XSD found for company {company_code} - skipping extension processing")
         return new_concepts
 
     # Parse core data
@@ -288,128 +289,4 @@ def process_extension_taxonomy(pkg_root, company_code: str, session, concept_cac
             concept_cache[key] = cid
             new_concepts.append(cid)
 
-    return new_concepts
-
-
-def load_concepts():
-    """Load concepts from JSON file into the database."""
-    
-    # Get the path to the JSON file
-    json_file_path = Path(__file__).parent / "xsd_elements_universal_with_labels.json"
-    
-    if not json_file_path.exists():
-        print(f"Error: JSON file not found at {json_file_path}")
-        return False
-    
-    # Load the JSON data
-    print(f"Loading concepts from {json_file_path}")
-    with open(json_file_path, 'r', encoding='utf-8') as f:
-        concepts_data = json.load(f)
-    
-    # Prepare data for insertion
-    concepts_to_insert = []
-    for local_name, concept_info in concepts_data.items():
-        concept_record = (
-            concept_info.get('taxonomy'),      # taxonomy_prefix
-            local_name,                        # local_name
-            concept_info.get('label_en'),      # std_label_en
-            concept_info.get('label_ja'),      # std_label_ja
-            concept_info.get('item_type'),     # item_type
-            concept_info.get('latest_version') # taxonomy_version
-        )
-        concepts_to_insert.append(concept_record)
-    
-    # Connect to database and insert data
-    try:
-        engine = create_engine(DB_URL)
-        Session = sessionmaker(bind=engine)
-        session = Session()
-        
-        print(f"Inserting {len(concepts_to_insert)} concepts...")
-        
-        # Clear existing data
-        session.execute(text("DELETE FROM concepts"))
-        print("Cleared existing concepts")
-        
-        # Insert new concepts in batches
-        inserted_count = 0
-        for concept_record in concepts_to_insert:
-            taxonomy_prefix, local_name, std_label_en, std_label_ja, item_type, taxonomy_version = concept_record
-            
-            result = session.execute(
-                text("""
-                    INSERT INTO concepts (taxonomy_prefix, local_name, std_label_en, std_label_ja, item_type, taxonomy_version)
-                    VALUES (:taxonomy_prefix, :local_name, :std_label_en, :std_label_ja, :item_type, :taxonomy_version)
-                    ON CONFLICT (taxonomy_prefix, local_name) DO UPDATE SET
-                        std_label_en = EXCLUDED.std_label_en,
-                        std_label_ja = EXCLUDED.std_label_ja,
-                        item_type = EXCLUDED.item_type,
-                        taxonomy_version = EXCLUDED.taxonomy_version
-                    RETURNING id
-                """),
-                {
-                    'taxonomy_prefix': taxonomy_prefix,
-                    'local_name': local_name,
-                    'std_label_en': std_label_en,
-                    'std_label_ja': std_label_ja,
-                    'item_type': item_type,
-                    'taxonomy_version': taxonomy_version
-                }
-            )
-            
-            if result.rowcount > 0:
-                inserted_count += 1
-                if inserted_count % 1000 == 0:
-                    print(f"Inserted {inserted_count} concepts...")
-        
-        # Commit changes
-        session.commit()
-        
-        # Get count of total records
-        count_result = session.execute(text("SELECT COUNT(*) FROM concepts"))
-        count = count_result.scalar()
-        
-        print(f"Successfully loaded {count} concepts into the database")
-        
-        # Show some statistics
-        standards_result = session.execute(text("""
-            SELECT taxonomy_prefix, COUNT(*) 
-            FROM concepts 
-            GROUP BY taxonomy_prefix 
-            ORDER BY taxonomy_prefix
-        """))
-        taxonomies = standards_result.fetchall()
-        
-        print("\nConcepts by taxonomy prefix:")
-        for taxonomy_prefix, count in taxonomies:
-            print(f"  {taxonomy_prefix}: {count}")
-        
-        item_types_result = session.execute(text("""
-            SELECT item_type, COUNT(*) 
-            FROM concepts 
-            WHERE item_type IS NOT NULL
-            GROUP BY item_type 
-            ORDER BY COUNT(*) DESC
-        """))
-        item_types = item_types_result.fetchall()
-        
-        print("\nConcepts by item type:")
-        for item_type, count in item_types:
-            print(f"  {item_type}: {count}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error loading concepts: {e}")
-        if 'session' in locals():
-            session.rollback()
-        return False
-    
-    finally:
-        if 'session' in locals():
-            session.close()
-
-
-if __name__ == "__main__":
-    success = load_concepts()
-    sys.exit(0 if success else 1) 
+    return new_concepts 

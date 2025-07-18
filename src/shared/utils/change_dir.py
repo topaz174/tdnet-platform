@@ -1,9 +1,9 @@
 import os
 import shutil
 import json
-from sqlalchemy import create_engine
+from pathlib import Path
 from sqlalchemy.orm import sessionmaker
-from init_db import Disclosure, Base, engine
+from ...database.utils.init_db import Disclosure, Base, engine
 
 # Constants
 CONFIG_FILE = 'directories.json'

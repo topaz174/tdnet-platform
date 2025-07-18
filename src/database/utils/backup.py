@@ -11,21 +11,8 @@ import sys
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import database configuration
-try:
-    from tdnet_scraper.config.config import DB_CONFIG
-except ImportError:
-    # Fallback to environment variables if config.py not available
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    DB_CONFIG = {
-        'user': os.getenv('TDNET_DB_USER', os.getenv('DB_USER', 'postgres')),
-        'password': os.getenv('TDNET_DB_PASSWORD', os.getenv('DB_PASSWORD', '')),
-        'host': os.getenv('TDNET_DB_HOST', os.getenv('DB_HOST', 'localhost')),
-        'port': os.getenv('TDNET_DB_PORT', os.getenv('DB_PORT', '5432')),
-        'database': os.getenv('TDNET_DB_NAME', os.getenv('DB_NAME', 'tdnet'))
-    }
+# Import unified config
+from config.config import DB_CONFIG
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

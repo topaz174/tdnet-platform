@@ -37,3 +37,5 @@ asyncpg>=0.28.0
 tqdm>=4.65.0
 huggingface-hub>=0.15.0
 migra>=1.1.0
+lxml>=6.0.0
+xlrd>=2.0.1

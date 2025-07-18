@@ -9,13 +9,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError
 
 # Add project root to path
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from config.config import DB_URL
 from config.config_tdnet_search import DB_URL_SEARCH
-from src.database.utils.init_db import Base as MainBase, Disclosure as MainDisclosure
-from src.scraper.tdnet_search.init_db_search import Base as SearchBase, Disclosure as SearchDisclosure
+from database.utils.init_db import Base as MainBase, Disclosure as MainDisclosure
+from scraper.tdnet_search.init_db_search import Base as SearchBase, Disclosure as SearchDisclosure
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

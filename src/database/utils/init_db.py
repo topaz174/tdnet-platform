@@ -1,16 +1,17 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, Date, Time, DateTime, ForeignKey, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Text, Date, Time, DateTime, ForeignKey, Boolean, Float, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import func
 import sys
+import os
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import unified config
 from config.config import DB_URL
-
 
 engine = create_engine(DB_URL)
 Base = declarative_base()
@@ -26,13 +27,25 @@ class Disclosure(Base):
     company_name = Column(String)
     title = Column(Text)
     xbrl_url = Column(Text, nullable=True)
-    has_xbrl = Column(Boolean, nullable=False, default=False)  # Boolean indicating XBRL availability
+    pdf_path = Column(Text, nullable=True)
     exchange = Column(String)
     update_history = Column(Text, nullable=True)
     page_number = Column(Integer)
     scraped_at = Column(DateTime, default=func.now())
-    category = Column(Text, nullable=True)  # Parent categories (comma-separated)
-    subcategory = Column(Text, nullable=True)  # Subcategories (comma-separated, empty for "Other")
+    category = Column(Text, nullable=True)
+    subcategory = Column(Text, nullable=True)
+    # Note: embedding field requires pgvector extension, so we'll skip it for now
+    # embedding = Column(Vector(1024), nullable=True)
+    xbrl_path = Column(Text, nullable=True)
+    extraction_status = Column(String(20), default='pending')
+    extraction_method = Column(String(20), nullable=True)
+    extraction_date = Column(DateTime, nullable=True)
+    extraction_error = Column(Text, nullable=True)
+    chunks_extracted = Column(Integer, default=0)
+    extraction_duration = Column(Float, default=0.0)
+    extraction_file_path = Column(Text, nullable=True)
+    extraction_metadata = Column(JSON, nullable=True)
+    has_xbrl = Column(Boolean, nullable=False, default=False)
     
     def __repr__(self):
         return f"<Disclosure(id={self.id}, company_code={self.company_code}, title={self.title})>"
@@ -87,4 +100,4 @@ class DisclosureCategoryPattern(Base):
 
 if __name__ == "__main__":
     Base.metadata.create_all(engine)
-    print("Database tables created successfully.") 
+    print("Database tables created successfully.")

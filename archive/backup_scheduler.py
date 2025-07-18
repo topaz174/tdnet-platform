@@ -1,7 +1,7 @@
 import schedule
 import time
 import logging
-from backup_database import TDnetBackupManager
+from backup import TDnetBackupManager
 from datetime import datetime, timedelta
 import os
 from pathlib import Path

@@ -79,42 +79,48 @@ def load_database_config(env_file_path: str = None) -> str:
         env_file_path: Path to .env file (default: searches parent directories)
     
     Returns:
-        PostgreSQL connection string (PG_DSN format)
+        PostgreSQL connection string
     """
     # Try to load .env file
-    if DOTENV_AVAILABLE:
         if env_file_path:
             env_path = Path(env_file_path)
+        if env_path.exists():
+            load_dotenv(env_path)
+            logger.info(f"Loaded environment from: {env_path}")
+        else:
+            logger.warning(f"Specified .env file not found: {env_path}")
         else:
             # Search for .env file in current directory and parent directories
-            current_dir = Path(__file__).parent
-            env_path = None
+        current_dir = Path.cwd()
             for parent in [current_dir] + list(current_dir.parents):
                 candidate = parent / '.env'
                 if candidate.exists():
-                    env_path = candidate
+                load_dotenv(candidate)
+                logger.info(f"Loaded environment from: {candidate}")
                     break
-        
-        if env_path and env_path.exists():
-            load_dotenv(env_path)
-            logger.info(f"Loaded environment variables from: {env_path}")
         else:
             logger.info("No .env file found, using system environment variables")
-    else:
-        logger.info("python-dotenv not available, using system environment variables only")
     
-    # Try to get PG_DSN directly first
+    # Try PG_DSN first (unified pipeline style)
     pg_dsn = os.getenv('PG_DSN')
-    if pg_dsn and pg_dsn.strip():
+    if pg_dsn:
         logger.info("Using PG_DSN from environment")
         return pg_dsn.strip()
     
+    # Import unified config
+    try:
+        from config.config import DB_URL
+        logger.info("Using unified config DB_URL")
+        return DB_URL
+    except ImportError:
+        logger.warning("Unified config not available, falling back to environment variables")
+    
     # Build PG_DSN from individual components
-    db_user = os.getenv('DB_USER', 'postgres')
-    db_password = os.getenv('DB_PASSWORD', '')
-    db_host = os.getenv('DB_HOST', 'localhost')
-    db_port = os.getenv('DB_PORT', '5432')
-    db_name = os.getenv('DB_NAME', 'tdnet')
+    db_user = os.getenv('TDNET_DB_USER', os.getenv('DB_USER', 'postgres'))
+    db_password = os.getenv('TDNET_DB_PASSWORD', os.getenv('DB_PASSWORD', ''))
+    db_host = os.getenv('TDNET_DB_HOST', os.getenv('DB_HOST', 'localhost'))
+    db_port = os.getenv('TDNET_DB_PORT', os.getenv('DB_PORT', '5432'))
+    db_name = os.getenv('TDNET_DB_NAME', os.getenv('DB_NAME', 'tdnet'))
     
     # Remove quotes from password if present
     if db_password.startswith("'") and db_password.endswith("'"):
@@ -884,7 +890,7 @@ class UnifiedExtractionPipeline:
     
     def __init__(self, config: UnifiedProcessingConfig):
         self.config = config
-        self.db_manager = DatabaseManager(config.pg_dsn)
+        self.db_manager = DatabaseManager(DB_URL)
         self.xbrl_processor = UnifiedXBRLProcessor(config.output_dir)
         self.pdf_processor = UnifiedPDFProcessor(config)
         self.file_selector = FileSelectionStrategy(config)
@@ -1104,7 +1110,7 @@ class UnifiedExtractionPipeline:
                 'is_numeric': chunk_dict.get('is_numeric', False),
                 'disclosure_hash': chunk_dict.get('disclosure_hash'),
                 'source_file': chunk_dict.get('source_file'),
-                'page_number': chunk_dict.get('page_number'),  # Will be None for XBRL
+                'page_number': chunk_dict.get('page_number', None),  # Will be None for XBRL
                 'metadata': chunk_dict.get('metadata', {})
             }
             
@@ -1342,13 +1348,6 @@ async def main_async():
     """Async main function"""
     parser = argparse.ArgumentParser(description='Unified Extraction Pipeline for Financial Intelligence')
     
-    # Database settings
-    parser.add_argument('--pg-dsn', type=str, 
-                       default='',
-                       help='PostgreSQL connection string (default: auto-loaded from .env file)')
-    parser.add_argument('--env-file', type=str,
-                       help='Path to .env file (default: searches parent directories)')
-    
     # Processing settings
     parser.add_argument('--workers', type=int, default=16, help='Number of worker processes')
     parser.add_argument('--concurrent-files', type=int, default=8, help='Max concurrent files')
@@ -1396,28 +1395,6 @@ async def main_async():
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Load database configuration
-    try:
-        if args.pg_dsn:
-            # Use provided PG_DSN
-            pg_dsn = args.pg_dsn
-            logger.info("Using PG_DSN from command line argument")
-        else:
-            # Load from .env file or environment variables
-            pg_dsn = load_database_config(args.env_file)
-        
-        if not pg_dsn:
-            raise ValueError("No database connection string found")
-            
-    except Exception as e:
-        print(f"Error loading database configuration: {e}")
-        print("\nPlease ensure one of the following:")
-        print("1. Set PG_DSN in .env file: PG_DSN=postgresql://user:password@localhost/tdnet")
-        print("2. Set individual variables in .env file: DB_USER, DB_PASSWORD, DB_HOST, DB_NAME, DB_PORT")
-        print("3. Provide --pg-dsn argument: --pg-dsn postgresql://user:password@localhost/tdnet")
-        print("4. Set PG_DSN environment variable")
-        sys.exit(1)
-    
     # Auto-detect optimal worker count if using default
     if args.workers == 16:  # default value
         cpu_count = mp.cpu_count()
@@ -1427,7 +1404,6 @@ async def main_async():
     
     # Create configuration
     config = UnifiedProcessingConfig(
-        pg_dsn=pg_dsn,
         max_workers=args.workers,
         max_concurrent_files=args.concurrent_files,
         batch_size=args.batch_size,
@@ -1459,7 +1435,7 @@ async def main_async():
         from tabulate import tabulate
         
         # Create a temporary database manager for status report
-        db_manager = DatabaseManager(pg_dsn)
+        db_manager = DatabaseManager(DB_URL)
         if not db_manager.connect():
             print("Error: Failed to connect to database")
             sys.exit(1)

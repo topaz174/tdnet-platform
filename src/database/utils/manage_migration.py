@@ -30,23 +30,8 @@ import json
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Database configuration imports
-try:
-    from tdnet_scraper.config.config import DB_CONFIG, DB_URL
-    db_config = DB_CONFIG
-    db_url = DB_URL
-except ImportError:
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    db_config = {
-        'user': os.getenv('TDNET_DB_USER', os.getenv('DB_USER', 'alex')),
-        'password': os.getenv('TDNET_DB_PASSWORD', os.getenv('DB_PASSWORD', 'alex')),
-        'host': os.getenv('TDNET_DB_HOST', os.getenv('DB_HOST', 'localhost')),
-        'port': os.getenv('TDNET_DB_PORT', os.getenv('DB_PORT', '5432')),
-        'database': os.getenv('TDNET_DB_NAME', os.getenv('DB_NAME', 'tdnet'))
-    }
-    db_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
+# Import unified config
+from config.config import DB_CONFIG, DB_URL
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -54,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 class MigrationManager:
     def __init__(self):
-        self.db_url = db_url
-        self.db_config = db_config
+        self.db_url = DB_URL
+        self.db_config = DB_CONFIG
         self.project_root = project_root
         
     def validate_environment(self):
@@ -206,7 +191,7 @@ class MigrationManager:
         """Create database backup before migration using the existing backup system"""
         try:
             # Import the existing backup manager
-            from src.database.utils.backup import TDnetBackupManager
+            from .backup import TDnetBackupManager
             
             backup_manager = TDnetBackupManager()
             
@@ -224,8 +209,8 @@ class MigrationManager:
             
             if backup_path:
                 logger.info(f"✓ Migration backup created: {backup_path}")
-                logger.info(f"Backup size: {backup_path.stat().st_size / 1024 / 1024:.1f} MB")
-                return str(backup_path)
+            logger.info(f"Backup size: {backup_path.stat().st_size / 1024 / 1024:.1f} MB")
+            return str(backup_path)
             else:
                 logger.error("Failed to create backup")
                 return False
@@ -349,7 +334,7 @@ def main():
         if args.list:
             # List existing backups
             try:
-                from src.database.utils.backup import TDnetBackupManager
+                from .backup import TDnetBackupManager
                 backup_manager = TDnetBackupManager()
                 backup_manager.list_backups()
                 success = True
@@ -358,7 +343,7 @@ def main():
                 success = False
         else:
             # Create backup
-            success = bool(manager.create_backup(args.name))
+        success = bool(manager.create_backup(args.name))
     else:
         logger.error(f"Unknown command: {args.command}")
         success = False

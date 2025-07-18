@@ -12,11 +12,11 @@ from urllib.parse import quote
 from pathlib import Path
 
 # Add project root to path for imports
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.scraper.tdnet_search.init_db_search import Disclosure, engine
-from src.classifier.rules.tdnet_classifier import classify_disclosure_title
+from src.scraper.tdnet_search.init_db import Disclosure, engine
+from src.classifier.rules.classifier import classify_disclosure_title
 from src.scraper.tdnet_search.google_auth import get_authenticated_session
 
 Session = sessionmaker(bind=engine)
@@ -476,12 +476,16 @@ def scrape_tdnet_search_page(query, page=1, check_existing=True):
                 
                 # Download XBRL if URL is available
                 xbrl_path = None
+                has_xbrl = False
                 if metrics_info.get('xbrl_url'):
                     xbrl_filename = f"{safe_time}_{disclosure_data['company_code']}_{sanitized_title}.zip"
                     xbrl_path = os.path.join(xbrl_dir, xbrl_filename)
                     xbrl_downloaded = download_file(metrics_info['xbrl_url'], xbrl_path, "XBRL", authenticated_session)
-                    if not xbrl_downloaded:
-                        xbrl_path = None
+                    if xbrl_downloaded:
+                        has_xbrl = True
+                        print(f"Successfully downloaded XBRL for: {disclosure_data['company_code']} - {disclosure_data['title']}")
+                    else:
+                        print(f"Failed to download XBRL for: {disclosure_data['company_code']} - {disclosure_data['title']}")
                 
                 # Classify the disclosure title
                 category, subcategory = classify_disclosure_title(disclosure_data['title'])
@@ -492,13 +496,15 @@ def scrape_tdnet_search_page(query, page=1, check_existing=True):
                     'company_code': disclosure_data['company_code'],
                     'company_name': disclosure_data['company_name'],
                     'title': disclosure_data['title'],
+                    'xbrl_url': metrics_info.get('xbrl_url'),  # Set the XBRL URL if available
                     'xbrl_path': xbrl_path,
                     'pdf_path': pdf_path,
                     'exchange': metrics_info.get('exchange', ''),
                     'update_history': metrics_info.get('update_history'),
                     'page_number': page,
                     'category': category,
-                    'subcategory': subcategory
+                    'subcategory': subcategory,
+                    'has_xbrl': has_xbrl  # Set based on successful XBRL download
                 }
                 
                 # Add to database (save disclosure metadata even without files)

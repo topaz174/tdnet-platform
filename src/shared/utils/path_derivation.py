@@ -1,57 +1,29 @@
-#!/usr/bin/env python3
-"""
-Path Derivation Utilities
-
-This module provides functions to derive XBRL and PDF file paths from disclosure metadata.
-Since these paths are predictable based on company_code, date, time, and title,
-we can reconstruct them on-demand instead of storing them in the database.
-
-Path Format:
-- Structure: <base_dir>/<YYYY-MM-DD>/<HH-MM>_<company_code>_<sanitized_title>.<ext>
-- Time format: Always HH-MM (e.g., "15-30") since all database time objects have seconds=0
-- Both scrapers store time objects without seconds and generate filenames in HH-MM format
-"""
-
 import os
 import re
 import json
+import sys
 from pathlib import Path
 from datetime import date, time
 from typing import Optional
 
+# Calculate project root once when module loads
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
-def load_directories_config(project_root: Optional[str] = None) -> dict:
-    """
-    Load directory configuration from directories.json file.
+# Import unified config
+from config.config import DB_URL
+
+# Load directory configuration once at module level
+def _load_directories_config() -> dict:
+    """Load directory configuration from directories.json file."""
+    config_path = Path(project_root) / 'config' / 'directories.json'
     
-    Args:
-        project_root (str, optional): Project root directory
-        
-    Returns:
-        dict: Dictionary containing directory paths
-    """
-    if project_root is None:
-        project_root = Path(__file__).resolve().parent.parent.parent
-    
-    config_path = Path(project_root) / 'directories.json'
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        return config
-    except FileNotFoundError:
-        # Fallback to default directories if config file not found
-        return {
-            'pdf_directory': str(Path(project_root) / 'downloads' / 'pdfs'),
-            'xbrls_directory': str(Path(project_root) / 'downloads' / 'xbrls')
-        }
-    except Exception as e:
-        print(f"Error loading directories.json: {e}")
-        # Fallback to default directories
-        return {
-            'pdf_directory': str(Path(project_root) / 'downloads' / 'pdfs'),
-            'xbrls_directory': str(Path(project_root) / 'downloads' / 'xbrls')
-        }
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    return config
+
+# Load config once at module level
+DIRECTORIES_CONFIG = _load_directories_config()
 
 
 def sanitize_filename(filename: str) -> str:
@@ -102,8 +74,9 @@ def derive_xbrl_path(
         str: Derived XBRL file path
     """
     if base_dir is None:
-        config = load_directories_config()
-        base_dir = config.get('xbrls_directory', 'downloads/xbrls')
+        base_dir = DIRECTORIES_CONFIG.get('xbrls_directory')
+        if base_dir is None:
+            raise ValueError("xbrls_directory not found in config")
     
     # Format date and time
     date_str = disclosure_date.strftime('%Y-%m-%d')
@@ -145,8 +118,9 @@ def derive_pdf_path(
         str: Derived PDF file path
     """
     if base_dir is None:
-        config = load_directories_config()
-        base_dir = config.get('pdf_directory', 'downloads/pdfs')
+        base_dir = DIRECTORIES_CONFIG.get('pdf_directory')
+        if base_dir is None:
+            raise ValueError("pdf_directory not found in config")
     
     # Format date and time
     date_str = disclosure_date.strftime('%Y-%m-%d')
@@ -167,19 +141,19 @@ def derive_pdf_path(
     return pdf_path
 
 
-def check_file_exists(file_path: str, project_root: Optional[str] = None) -> bool:
+def check_file_exists(file_path: str, project_root_param: Optional[str] = None) -> bool:
     """
     Check if a derived file path actually exists on the filesystem.
     
     Args:
         file_path (str): The file path to check
-        project_root (str, optional): Project root directory
+        project_root_param (str, optional): Project root directory
         
     Returns:
         bool: True if file exists, False otherwise
     """
-    if project_root is None:
-        project_root = Path(__file__).resolve().parent.parent.parent
+    if project_root_param is None:
+        project_root_param = str(project_root)
     
     path = Path(file_path)
     
@@ -188,7 +162,7 @@ def check_file_exists(file_path: str, project_root: Optional[str] = None) -> boo
         return True
     
     # If not absolute, try relative to project root
-    relative_path = Path(project_root) / file_path
+    relative_path = Path(project_root_param) / file_path
     if relative_path.exists():
         return True
     

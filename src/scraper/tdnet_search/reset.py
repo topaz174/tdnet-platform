@@ -14,7 +14,7 @@ from datetime import datetime
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.scraper.tdnet_search.init_db_search import Base, engine, Disclosure
+from scraper.tdnet_search.init_db_search import Base, engine, Disclosure
 from sqlalchemy.orm import sessionmaker
 
 def load_directory_config():

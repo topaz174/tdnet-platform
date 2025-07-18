@@ -19,60 +19,68 @@ from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
 from zipfile import Path as ZipPath
 from contextlib import contextmanager
-from typing import Optional, Dict, List, Tuple, Set, Any
+from typing import Optional, Dict, List, Tuple, Set, Any, Union
 import sys
 from datetime import datetime, date
 from dateutil.parser import parse as dt_parse
-
-# Add parent directories to path for imports
-current_dir = Path(__file__).resolve().parent
-src_dir = current_dir.parent
-root_dir = src_dir.parent
-sys.path.extend([str(src_dir), str(root_dir)])
-
+import pandas as pd
+import numpy as np
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Import unified config
 from config.config import DB_URL
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Database connection
+engine = create_engine(DB_URL)
+Session = sessionmaker(bind=engine)
+
+HAS_LXML = False
 try:
-    from lxml import etree
+    from lxml import etree  # type: ignore
     HAS_LXML = True
 except ImportError:
-    HAS_LXML = False
     logger.warning("lxml not installed. XBRL parsing will not work. `pip install lxml`")
 
-# Configuration
-MAX_FILINGS_TO_PROCESS = 99999
-
-# Setup logging
-logs_dir = root_dir / "logs"
+# Setup error logging
+logs_dir = project_root / "logs"
 logs_dir.mkdir(exist_ok=True)
-log_file = logs_dir / f"failed_facts_loading_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
-# Create logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)  # Only log errors
-
-# Create formatters
-detailed_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-simple_formatter = logging.Formatter('%(message)s')
-
-# File handler (detailed, includes ERROR)
-file_handler = logging.FileHandler(log_file, encoding='utf-8')
-file_handler.setLevel(logging.ERROR)  # Only log errors to file
-file_handler.setFormatter(detailed_formatter)
-
-# Console handler (simple, only ERROR and above)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.ERROR)  # Only show errors on console
-console_handler.setFormatter(simple_formatter)
-
-# Add handlers to logger
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
-
-# Prevent duplicate logging
-logger.propagate = False
+def setup_error_logging():
+    """Setup error logging with timestamp-based log file."""
+    log_file = logs_dir / f"failed_facts_loading_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    
+    # Create logger
+    error_logger = logging.getLogger(f"{__name__}_errors")
+    error_logger.setLevel(logging.ERROR)
+    
+    # Avoid duplicate handlers
+    if error_logger.handlers:
+        return error_logger
+    
+    # Create formatters
+    detailed_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    
+    # File handler (detailed, includes ERROR)
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.ERROR)
+    file_handler.setFormatter(detailed_formatter)
+    
+    # Add handlers to logger
+    error_logger.addHandler(file_handler)
+    
+    # Prevent duplicate logging
+    error_logger.propagate = False
+    
+    return error_logger
 
 
 @contextmanager
@@ -119,6 +127,7 @@ class FactsLoader:
         self.Session = sessionmaker(bind=self.engine)
         self.concept_cache = {}  # (taxonomy_prefix, local_name) -> concept_id
         self.processed_contexts = set()  # Set of context_ids we've already processed/inserted
+        self.error_logger = setup_error_logging()
         self._load_lookup_caches()
         
     def _load_lookup_caches(self):
@@ -263,11 +272,11 @@ class FactsLoader:
             return True
             
         except Exception as e:
-            logger.error(f"Could not ensure context {context_ref}: {e}")
+            self.error_logger.error(f"Could not ensure context {context_ref}: {e}")
             session.rollback()  # Clear the failed transaction state
             return False
 
-    def load_facts(self, max_count: int = MAX_FILINGS_TO_PROCESS, company_code: str = None) -> int:
+    def load_facts(self, company_code: Optional[str] = None) -> int:
         """Load financial facts from XBRL filings."""
         session = self.Session()
         total_facts_loaded = 0
@@ -290,9 +299,9 @@ class FactsLoader:
 
             if company_code:
                 filings_query += " AND d.company_code = :company_code"
-            filings_query += " ORDER BY d.disclosure_date DESC, d.time DESC LIMIT :max_count"
+            filings_query += " ORDER BY d.disclosure_date DESC, d.time DESC"
 
-            params = {'max_count': max_count}
+            params: Dict[str, Any] = {}
             if company_code:
                 params['company_code'] = company_code
 
@@ -343,17 +352,17 @@ class FactsLoader:
                                         session
                                     )
                             except FileNotFoundError as e:
-                                logger.error(f"File not found for section {sec.statement_role_ja}: {e}")
+                                self.error_logger.error(f"File not found for section {sec.statement_role_ja}: {e}")
                                 error_count += 1
                                 continue
                             except Exception as e:
-                                logger.error(f"Exception processing section {sec.statement_role_ja}: {e}")
+                                self.error_logger.error(f"Exception processing section {sec.statement_role_ja}: {e}")
                                 error_count += 1
                                 continue
                             
                             if not facts:
                                 if error_type != "ERR_NO_FACTS_FOUND":
-                                    logger.error(f"No facts found for section {sec.statement_role_ja}: {error_type}")
+                                    self.error_logger.error(f"No facts found for section {sec.statement_role_ja}: {error_type}")
                                     error_count += 1
                                 continue
 
@@ -369,12 +378,12 @@ class FactsLoader:
 
                 except Exception as e:
                     error_count += 1
-                    logger.error(f"ERROR (filing skipped): {e}")
+                    self.error_logger.error(f"ERROR (filing skipped): {e}")
                     session.rollback()
                     continue
 
         except Exception as e:
-            logger.error(f"Database error: {e}")
+            self.error_logger.error(f"Database error: {e}")
             session.rollback()
         finally:
             session.close()
@@ -382,7 +391,7 @@ class FactsLoader:
         print(f"\nLoad complete: {filings_processed} filings, {total_facts_loaded} facts, {error_count} section errors/skips")
         return total_facts_loaded
 
-    def test_file_path(self, file_path: str, section_role: str = None) -> None:
+    def test_file_path(self, file_path: str, section_role: Optional[str] = None) -> None:
         """Test processing a specific file path and output results in readable format."""
         pkg_path = Path(file_path)
         
@@ -404,32 +413,34 @@ class FactsLoader:
                 print(f"Added {len(extension_concepts)} extension concepts")
             
                 # Find all HTML files in the package
-                html_files = []
-                for file_path in _iter_package_files(pkg_root):
-                    if file_path.name.lower().endswith(('.htm', '.html')):
-                        html_files.append(file_path)
+                html_files: List[Union[Path, ZipPath]] = []
+                for file_p in _iter_package_files(pkg_root):
+                    if hasattr(file_p, 'name') and file_p.name.lower().endswith(('.htm', '.html')):
+                        html_files.append(file_p)
                 
                 print(f"\nFound {len(html_files)} HTML files:")
-                for i, file_path in enumerate(html_files, 1):
-                    print(f"  {i}. {file_path.name}")
+                for i, file_p in enumerate(html_files, 1):
+                    if hasattr(file_p, 'name'):
+                        print(f"  {i}. {file_p.name}")
             
                 # Process each HTML file
                 total_facts = 0
-                for i, file_path in enumerate(html_files, 1):
-                    print(f"\n--- Processing file {i}/{len(html_files)}: {file_path.name} ---")
+                for i, file_p in enumerate(html_files, 1):
+                    if hasattr(file_p, 'name'):
+                        print(f"\n--- Processing file {i}/{len(html_files)}: {file_p.name} ---")
                     
                     # Determine section role if not specified
                     current_section_role = section_role
                     if not current_section_role:
-                        if 'summary' in str(file_path).lower():
+                        if 'summary' in str(file_p).lower():
                             current_section_role = 'Summary'
-                    else:
+                        else:
                             current_section_role = 'Attachment'
                     
                     print(f"Section role: {current_section_role}")
 
                     try:
-                        with file_path.open('rb') as fh:
+                        with file_p.open('rb') as fh:
                             content = fh.read()
                             facts, error_type = self._parse_xbrl_content(content, 0, session)
 
@@ -488,11 +499,11 @@ class FactsLoader:
     def _process_extension_taxonomy(self, pkg_root, company_code: str, session) -> List[int]:
         """Process company extension taxonomy and add new concepts to database."""
         try:
-            from src.quantitative.etl.load_concepts import process_extension_taxonomy
+            from src.quantitative.etl.extension_concept_processor import process_extension_taxonomy
             result = process_extension_taxonomy(pkg_root, company_code, session, self.concept_cache)
             return result
         except Exception as e:
-            logger.error(f"Extension taxonomy processing failed for {company_code}: {e}")
+            self.error_logger.error(f"Extension taxonomy processing failed for {company_code}: {e}")
             return []
 
     def _extract_facts_from_file_handle(self, file_handle, section_id: int, session) -> Tuple[List[Dict], str]:
@@ -508,11 +519,13 @@ class FactsLoader:
 
     def _parse_xbrl_content(self, content: bytes, section_id: int, session) -> Tuple[List[Dict], str]:
         """Parse XBRL content and extract facts."""
+        if not HAS_LXML or etree is None:
+            return [], "ERR_NO_LXML"
         try:
             try:
                 root = etree.fromstring(content, etree.XMLParser(recover=True))
             except Exception as e:
-                logger.error(f"XML parsing failed for section {section_id}: {e}")
+                self.error_logger.error(f"XML parsing failed for section {section_id}: {e}")
                 return [], "ERR_XML_PARSE_FAILED"
 
             # Some inline-XBRL generators (e.g. certain Sony filings) output lowercase
@@ -521,7 +534,7 @@ class FactsLoader:
             elements_with_context = root.xpath(".//*[@contextRef] | .//*[@contextref]")
             
             if not elements_with_context:
-                logger.error(f"No elements with context attributes found in section {section_id}")
+                self.error_logger.error(f"No elements with context attributes found in section {section_id}")
                 return [], "ERR_NO_CONTEXT_ELEMENTS"
 
             facts: List[Dict] = []
@@ -580,7 +593,7 @@ class FactsLoader:
                     if elem.get('sign') == '-' or '△' in elem.text:
                         value = -value
                 except (ValueError, TypeError) as e:
-                    logger.error(f"Failed to parse value '{value_str}' in section {section_id}: {e}")
+                    self.error_logger.error(f"Failed to parse value '{value_str}' in section {section_id}: {e}")
                     continue
 
                 unit_ref = elem.get('unitRef', '')
@@ -607,7 +620,7 @@ class FactsLoader:
             return facts, "SUCCESS"
 
         except Exception as e:
-            logger.error(f"Exception during parsing section {section_id}: {e}")
+            self.error_logger.error(f"Exception during parsing section {section_id}: {e}")
             return [], "ERR_PARSE_EXCEPTION"
 
     def _map_unit_ref_to_unit_id(self, unit_ref: str, scale: int = 0) -> int:
@@ -685,7 +698,7 @@ class FactsLoader:
                 session.commit()  # commit per fact to isolate errors
                 inserted_count += 1
             except Exception as e:
-                logger.error(f"Could not insert fact: {e}")
+                self.error_logger.error(f"Could not insert fact: {e}")
                 session.rollback()  # clear failed state so subsequent queries work
                 continue
         
@@ -698,7 +711,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Load facts from XBRL filings")
     parser.add_argument("--company", help="Restrict to specific company_code", default=None)
-    parser.add_argument("--limit", type=int, help="Max filing sections to process", default=MAX_FILINGS_TO_PROCESS)
+    parser.add_argument("--limit", type=int, help="Max filings to process (deprecated, processes all)", default=None)
     parser.add_argument("--test-file", help="Test a specific file path without inserting into database", default=None)
     parser.add_argument("--section-role", help="Section role for test file (Summary/Attachment)", default=None)
     args = parser.parse_args()
@@ -712,12 +725,13 @@ def main():
     else:
         # Normal loading mode
         print(f"Starting facts loading process...")
-        print(f"Maximum filing sections to process: {args.limit}")
+        if args.limit:
+            print(f"Note: --limit {args.limit} ignored, processing all available filings")
         
         if args.company:
             print(f"Company filter: {args.company}")
         
-        loaded_count = loader.load_facts(max_count=args.limit, company_code=args.company)
+        loaded_count = loader.load_facts(company_code=args.company)
         print(f"\nFacts loading completed. Total loaded: {loaded_count}")
 
 

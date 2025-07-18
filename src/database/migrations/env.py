@@ -11,33 +11,15 @@ from alembic import context
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import database configuration
-try:
-    from tdnet_scraper.config.config import DB_URL
-    database_url = DB_URL
-except ImportError:
-    # Fallback to environment variables
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    # Try PG_DSN first (unified pipeline style)
-    database_url = os.getenv('PG_DSN')
-    if not database_url:
-        # Build from individual components (legacy style)
-        db_user = os.getenv('TDNET_DB_USER', os.getenv('DB_USER', 'postgres'))
-        db_password = os.getenv('TDNET_DB_PASSWORD', os.getenv('DB_PASSWORD', ''))
-        db_host = os.getenv('TDNET_DB_HOST', os.getenv('DB_HOST', 'localhost'))
-        db_port = os.getenv('TDNET_DB_PORT', os.getenv('DB_PORT', '5432'))
-        db_name = os.getenv('TDNET_DB_NAME', os.getenv('DB_NAME', 'tdnet'))
-        
-        database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+# Import unified config
+from config.config import DB_URL
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
 # Override the sqlalchemy.url in the config with our database URL
-config.set_main_option('sqlalchemy.url', database_url)
+config.set_main_option('sqlalchemy.url', DB_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

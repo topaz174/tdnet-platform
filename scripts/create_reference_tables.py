@@ -11,14 +11,16 @@ Usage:
 
 import os
 import sys
-import argparse
+import subprocess
 import logging
 from pathlib import Path
-import psycopg2
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
-# Add the src directory to the Python path to allow imports
-sys.path.append(str(Path(__file__).parent.parent / "src"))
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
+
+# Import unified config
+from config.config import DB_URL
 
 def setup_logging():
     """Setup logging configuration"""
@@ -31,25 +33,6 @@ def setup_logging():
         ]
     )
     return logging.getLogger(__name__)
-
-def get_database_url():
-    """Get database URL from environment or prompt user"""
-    db_url = os.getenv('DATABASE_URL')
-    if not db_url:
-        db_url = os.getenv('TDNET_DB_URL')
-    
-    if not db_url:
-        # Get current system user for database connection
-        import getpass
-        current_user = getpass.getuser()
-        
-        # Default for local development using current user
-        db_url = f"postgresql://{current_user}@localhost/tdnet"
-        print(f"No DATABASE_URL found, using current user '{current_user}': {db_url}")
-        print("Note: This assumes PostgreSQL is configured for peer authentication.")
-        print("If you need password authentication, set DATABASE_URL environment variable.")
-    
-    return db_url
 
 def read_sql_file():
     """Read the SQL file content"""

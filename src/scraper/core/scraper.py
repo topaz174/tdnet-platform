@@ -1,5 +1,5 @@
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import pandas as pd
 import os
 import json
@@ -9,15 +9,15 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.database.utils.init_db import Disclosure, Base, engine
-from src.classifier.rules.tdnet_classifier import classify_disclosure_title
+from src.database.utils.init_db import Disclosure, DisclosureCategory, DisclosureSubcategory, DisclosureLabel, Base, engine
+from src.classifier.rules.classifier import classify_disclosure_title, classify_and_store_labels
 
 
 Session = sessionmaker(bind=engine)
@@ -179,7 +179,15 @@ def add_disclosure_to_db(disclosure_data):
             disclosure = Disclosure(**disclosure_data)
             db_session.add(disclosure)
             db_session.commit()
-            print(f"Saved to database: {disclosure_data['company_code']} - {disclosure_data['title']}")
+            
+            # Now classify and store labels using the new system
+            try:
+                classify_and_store_labels(disclosure.id, disclosure.title)
+                print(f"Saved to database and classified: {disclosure_data['company_code']} - {disclosure_data['title']}")
+            except Exception as e:
+                print(f"Warning: Failed to classify disclosure {disclosure.id}: {e}")
+                # Don't fail the whole operation if classification fails
+            
             return True
         else:
             print(f"Skipping duplicate: {disclosure_data['company_code']} - {disclosure_data['title']}")
@@ -229,7 +237,7 @@ def scrape_tdnet_for_date(date_str, check_existing=True, min_time=None, max_time
     
     
     # Load directories from config
-    directories_file = project_root / 'directories.json'
+    directories_file = project_root / 'config' / 'directories.json'
     with open(directories_file, 'r') as f:
         config = json.load(f)
     pdf_base_dir = config['pdf_directory']
@@ -284,7 +292,7 @@ def scrape_tdnet_for_date(date_str, check_existing=True, min_time=None, max_time
             
             main_table = soup.find('table', id='main-list-table')
             
-            if not main_table:
+            if not isinstance(main_table, Tag):
                 print(f"No disclosure table found on page {page} for {date_str}.")
                 break
             
@@ -323,6 +331,8 @@ def scrape_tdnet_for_date(date_str, check_existing=True, min_time=None, max_time
             
             # Process each row
             for row in rows:
+                if not isinstance(row, Tag):
+                    continue
                 
                 cells = row.find_all('td')
                 
@@ -346,9 +356,11 @@ def scrape_tdnet_for_date(date_str, check_existing=True, min_time=None, max_time
                         continue  # Skip this row
                 
                 title_cell = cells[3]
+                if not isinstance(title_cell, Tag):
+                    continue
                 link_tag = title_cell.find('a')
                 
-                if not link_tag:
+                if not isinstance(link_tag, Tag):
                     continue  
                 
                 title = link_tag.get_text(strip=True)
@@ -365,41 +377,45 @@ def scrape_tdnet_for_date(date_str, check_existing=True, min_time=None, max_time
                         continue
                 
                 pdf_relative_url = link_tag.get('href')
+                if not isinstance(pdf_relative_url, str):
+                    continue
                 pdf_url = f"{base_url}{pdf_relative_url}"
                 
-                
-                xbrl_cell = cells[4]
-                xbrl_link = xbrl_cell.find('a', class_='style002')
-                xbrl_path = None
-                if xbrl_link:
-                    xbrl_relative_url = xbrl_link.get('href')
-                    xbrl_url = f"{base_url}{xbrl_relative_url}"
-                
-                
                 exchange = cells[5].get_text(strip=True).strip()
-                
-                
                 update_history = cells[6].get_text(strip=True).strip()
                 if update_history == '　　　　　':  
                     update_history = None
                 
-                
                 sanitized_title = sanitize_filename(title)
-                
                 safe_time = disclosure_time.replace(':', '-')
+
                 pdf_filename = f"{safe_time}_{company_code}_{sanitized_title}.pdf"
                 pdf_path = os.path.join(pdf_dir, pdf_filename)
                 
-                
                 pdf_downloaded = download_pdf(pdf_url, pdf_path)
                 
+                xbrl_cell = cells[4]
+                xbrl_link = None
+                if isinstance(xbrl_cell, Tag):
+                    xbrl_link = xbrl_cell.find('a', {'class': 'style002'})
+                
                 # Download XBRL if available
-                if xbrl_link:
+                xbrl_url = None
+                xbrl_path = None
+                has_xbrl = False
+                
+                if isinstance(xbrl_link, Tag):
+                    xbrl_relative_url = xbrl_link.get('href')
+                    if isinstance(xbrl_relative_url, str):
+                        xbrl_url = f"{base_url}{xbrl_relative_url}"
+                        
                     xbrl_filename = f"{safe_time}_{company_code}_{sanitized_title}.zip"
                     xbrl_file_path = os.path.join(xbrl_dir, xbrl_filename)
                     
                     if download_xbrl(xbrl_url, xbrl_file_path):
                         xbrl_path = xbrl_file_path
+                        has_xbrl = True
+                        print(f"Successfully downloaded XBRL for: {company_code} - {title}")
                     else:
                         print(f"Failed to download XBRL for: {company_code} - {title}")
                 
@@ -407,22 +423,19 @@ def scrape_tdnet_for_date(date_str, check_existing=True, min_time=None, max_time
                     hour, minute = map(int, disclosure_time.split(':'))
                     disclosure_time_obj = datetime.now().replace(hour=hour, minute=minute, second=0).time()
                     
-                    # Classify the disclosure title
-                    category, subcategory = classify_disclosure_title(title)
-                    
                     disclosure_data = {
                         'disclosure_date': disclosure_date,
                         'time': disclosure_time_obj,
                         'company_code': company_code,
                         'company_name': company_name,
                         'title': title,
+                        'xbrl_url': xbrl_url,  # Set the XBRL URL if available
                         'xbrl_path': xbrl_path,  # Set the downloaded XBRL path
                         'pdf_path': pdf_path,
                         'exchange': exchange,
                         'update_history': update_history,
                         'page_number': page,
-                        'category': category,
-                        'subcategory': subcategory
+                        'has_xbrl': has_xbrl  # Set based on successful XBRL download
                     }
                     
                     # Add to database immediately after downloading the PDF

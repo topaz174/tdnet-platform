@@ -1,7 +1,7 @@
 {
-    "pdf_directory": "C:\\Users\\Alex\\Desktop\\Internship\\tdnet_scraper\\downloads\\pdfs",
-    "xbrls_directory": "F:\\TEMP\\tdnet_xbrls",
-    "backup_directory": "/home/alex/dev/tdnet-platform/backup",
-    "tdnet_search_pdf_directory": "pdfs_tdnet_search",
-    "tdnet_search_xbrl_directory": "xbrls_tdnet_search"
+    "pdf_directory": "/home/alex/pdfs",
+    "xbrls_directory": "/home/alex/xbrls",
+    "backup_directory": "/home/alex/backup",
+    "tdnet_search_pdf_directory": "/home/alex/xbrls/pdfs_tdnet_search",
+    "tdnet_search_xbrl_directory": "/home/alex/xbrls/xbrls_tdnet_search"
 }

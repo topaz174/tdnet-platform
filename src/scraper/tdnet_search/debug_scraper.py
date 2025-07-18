@@ -14,8 +14,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.classifier.rules.tdnet_classifier import classify_disclosure_title
-from src.scraper.tdnet_search.google_auth import get_authenticated_session
+from classifier.rules.classifier import classify_disclosure_title
+from scraper.tdnet_search.google_auth import get_authenticated_session
 
 # Global variables
 authenticated_session = None

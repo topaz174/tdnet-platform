@@ -29,25 +29,33 @@ import zipfile
 import tempfile
 from pathlib import Path
 from datetime import datetime, date
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 import sys
 import json
 from collections import OrderedDict
 import argparse
-
-# Add parent directories to path for imports
-current_dir = Path(__file__).resolve().parent
-src_dir = current_dir.parent
-root_dir = src_dir.parent
-sys.path.extend([str(src_dir), str(root_dir)])
-
+import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError
+
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Import unified config
 from config.config import DB_URL
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Database connection
+engine = create_engine(DB_URL)
+Session = sessionmaker(bind=engine)
+
 try:
-    from lxml import etree
+    from lxml import etree  # type: ignore
     HAS_LXML = True
 except ImportError:
     HAS_LXML = False
@@ -55,25 +63,8 @@ except ImportError:
 
 from dateutil.parser import parse as dt_parse
 
-# Configuration: Number of filings to load (for testing)
-MAX_FILINGS_TO_LOAD = 999999  # Change this to control how many filings to process
-
-# Mapping from 2-character suffix to statement role with Japanese and English translations
-ATTACHMENT_SUFFIX_MAP = {
-    'bs': {'role': 'BalanceSheet', 'ja': '貸借対照表', 'en': 'Balance sheet'},
-    'pl': {'role': 'ProfitLoss', 'ja': '損益計算書', 'en': 'Profit-and-loss'},
-    'ci': {'role': 'ComprehensiveIncome', 'ja': '包括利益計算書', 'en': 'Comprehensive income'},
-    'pc': {'role': 'CombinedPLCI', 'ja': '損益及び包括利益計算書', 'en': 'Combined PL & CI'},
-    'fs': {'role': 'FinancialSummary', 'ja': '要約財政状態計算書', 'en': 'Condensed BS'},
-    'ss': {'role': 'ChangesInEquity', 'ja': '株主資本等変動計算書', 'en': 'Changes in equity'},
-    'cf': {'role': 'CashFlows', 'ja': 'キャッシュ・フロー計算書', 'en': 'Cash flows'},
-    'sg': {'role': 'SegmentInformation', 'ja': 'セグメント情報', 'en': 'Segment info'},
-    'nb': {'role': 'BSNotes', 'ja': '貸借対照表関係注記', 'en': 'BS notes'},
-    'nc': {'role': 'PLCINotes', 'ja': '損益及び包括利益計算書関係注記', 'en': 'PL & CI notes'},
-    'np': {'role': 'PLNotes', 'ja': '損益計算書関係注記', 'en': 'PL notes'},
-    'ds': {'role': 'DividendSchedule', 'ja': '配当関係注記', 'en': 'Dividend schedule'},
-    'qualitative': {'role': 'Narrative', 'ja': 'ナラティブ', 'en': 'Narrative'},
-}
+# Import filing sections parser utility
+from src.quantitative.etl.filing_sections_parser import discover_sections_from_path
 
 class XBRLFilingLoader:
     """Loads XBRL filings from disclosures into the xbrl_filings table."""
@@ -82,12 +73,11 @@ class XBRLFilingLoader:
         self.engine = create_engine(DB_URL)
         self.Session = sessionmaker(bind=self.engine)
         
-    def load_filings(self, max_count: int = MAX_FILINGS_TO_LOAD, company_code: str | None = None) -> int:
+    def load_filings(self, company_code: str | None = None) -> int:
         """
         Load XBRL filings from disclosures table.
         
         Args:
-            max_count (int): Maximum number of filings to load
             company_code (str | None): Restrict loading to specific company_code
             
         Returns:
@@ -111,8 +101,8 @@ class XBRLFilingLoader:
                     c.id as company_id
                 FROM disclosures d
                 LEFT JOIN companies c ON (
-                    d.company_code = c.company_code OR 
-                    (LENGTH(d.company_code) = 5 AND SUBSTRING(d.company_code, 1, 4) = c.company_code)
+                    d.company_code = c.ticker OR 
+                    (LENGTH(d.company_code) = 5 AND SUBSTRING(d.company_code, 1, 4) = c.ticker)
                 )
                 WHERE d.has_xbrl = true
             """
@@ -120,11 +110,11 @@ class XBRLFilingLoader:
             if company_code:
                 base_query += " AND d.company_code = :company_code"
 
-            base_query += " ORDER BY d.disclosure_date DESC, d.time DESC LIMIT :max_count"
+            base_query += " ORDER BY d.disclosure_date DESC, d.time DESC"
 
             disclosures_query = text(base_query)
             
-            params = {'max_count': max_count}
+            params: Dict[str, Any] = {}
             if company_code:
                 params['company_code'] = company_code
             
@@ -241,7 +231,7 @@ class XBRLFilingLoader:
                     # -------------------------------------------------
                     # Insert all discovered filing sections
                     # -------------------------------------------------
-                    sections = self._discover_sections_from_path(Path(xbrl_path))
+                    sections = discover_sections_from_path(Path(xbrl_path))
 
                     section_insert_query = text("""
                         INSERT INTO filing_sections (
@@ -335,23 +325,23 @@ class XBRLFilingLoader:
             # Handle both directory and zip file cases
             if xbrl_path.is_dir():
                 primary_file = self._find_primary_ixbrl_file(xbrl_path)
-                dei_result: Optional[Dict] = None
+                dei_data: Optional[Dict] = None
                 if primary_file:
-                    dei_result = self._parse_dei_file(primary_file)
+                    dei_data = self._parse_dei_file(primary_file)
 
                 # If DEI parsing failed or missing critical dates, fall back to summary parsing
-                if not dei_result or 'period_start' not in dei_result:
+                if not dei_data or 'period_start' not in dei_data:
                     summary_file = self._find_summary_file(xbrl_path)
                     if summary_file:
                         summary_result = self._parse_summary_file(summary_file)
                         if summary_result:
                             # Merge: use DEI fields if any, else summary fields
-                            if dei_result:
-                                dei_result.update({k: v for k, v in summary_result.items() if k not in dei_result or dei_result[k] is None})
-                                return dei_result, None
+                            if dei_data:
+                                dei_data.update({k: v for k, v in summary_result.items() if k not in dei_data or dei_data[k] is None})
+                                return dei_data, None
                             return summary_result, None
                     return None, "ERR_PARSE_FAILED"
-                return dei_result, None
+                return dei_data, None
             else:
                 # Handle zip file
                 with tempfile.TemporaryDirectory() as temp_dir:
@@ -455,27 +445,27 @@ class XBRLFilingLoader:
                     value = (node.text or '').strip()
                     data[tag_map[name_attr]] = value
 
-            # Convert specific field types
-            for dt_field in ['period_start', 'period_end']:
-                if dt_field in data and data[dt_field]:
+            # Convert specific field types - create a new dict with proper types
+            result: Dict[str, Any] = {}
+            for key, value in data.items():
+                if key in ['period_start', 'period_end'] and value:
                     try:
-                        data[dt_field] = dt_parse(data[dt_field]).date()
+                        result[key] = dt_parse(value).date()
                     except Exception:
-                        pass
+                        result[key] = value
+                elif key in ['consolidated_flag', 'amendment_flag', 'report_amendment_flag', 'xbrl_amendment_flag'] and value:
+                    result[key] = str(value).lower() in {'true', '1', 'yes', 'y'}
+                else:
+                    result[key] = value
 
             # Add fiscal_year derived from period_end if available
-            if 'period_end' in data and isinstance(data['period_end'], date):
-                data['fiscal_year'] = data['period_end'].year
-
-            bool_fields = ['consolidated_flag', 'amendment_flag', 'report_amendment_flag', 'xbrl_amendment_flag']
-            for bf in bool_fields:
-                if bf in data:
-                    data[bf] = str(data[bf]).lower() in {'true', '1', 'yes', 'y'}
+            if 'period_end' in result and isinstance(result['period_end'], date):
+                result['fiscal_year'] = result['period_end'].year
 
             # Derive fiscal_quarter from period_type for consistency
-            data['fiscal_quarter'] = self._map_period_type_to_quarter(data.get('period_type'))
+            result['fiscal_quarter'] = self._map_period_type_to_quarter(result.get('period_type'))
 
-            return data
+            return result
         except Exception as e:
             print(f"  ERROR: Exception parsing DEI file {file_path}: {e}")
             return None
@@ -531,18 +521,19 @@ class XBRLFilingLoader:
     def _select_longest_duration_context(self, contexts):
         """Return context with longest duration (fallback heuristic)."""
         best = None
-        best_key = (-1, None)  # (duration days, end_date)
+        best_duration = -1
+        best_end_date = None
         for ctx in contexts:
             try:
                 start = dt_parse(ctx.xpath('.//xbrli:startDate', namespaces={'xbrli': 'http://www.xbrl.org/2003/instance'})[0].text).date()
                 end = dt_parse(ctx.xpath('.//xbrli:endDate', namespaces={'xbrli': 'http://www.xbrl.org/2003/instance'})[0].text).date()
                 duration = (end - start).days
-                key = (duration, end)
-                if key > best_key:
-                    best_key = key
+                if duration > best_duration or (duration == best_duration and (best_end_date is None or end > best_end_date)):
+                    best_duration = duration
+                    best_end_date = end
                     best = ctx
             except Exception:
-                            continue
+                continue
         return best
 
     def _extract_quarter_from_header(self, root):
@@ -592,156 +583,7 @@ class XBRLFilingLoader:
                 f.write("-"*30 + "\n")
         print(f"Failed filings log saved to {outfile}")
 
-    # -------------------------------------------------
-    # Section discovery helpers
-    # -------------------------------------------------
 
-    def _discover_sections(self, folder_path: Path) -> list[tuple[str, str, str, bool, int, str, str]]:
-        """Discover statement sections from attachment filenames with full parsing.
-
-        Parses filenames like: 0105010-qcci13-tse-qcediffr-67580-2023-12-31-01-2024-02-14-ixbrl.htm
-        Where qcci13 breaks down as: qc + ci + 13
-        - qc: period_prefix='q', consolidated=True
-        - ci: statement code for Comprehensive Income  
-        - 13: layout_code=13
-
-        Returns list of tuples: (statement_role, rel_path, period_prefix, consolidated, layout_code, statement_role_ja, statement_role_en)
-        """
-        discovered: list[tuple[str, str, str, bool, int, str, str]] = []
-
-        for root, _, files in os.walk(folder_path):
-            for file in files:
-                fname = file.lower()
-                if not fname.endswith(('.htm', '.html')):
-                        continue
-
-                file_path = Path(root) / file
-                full_path_lower = str(file_path).lower()
-                
-                # Calculate relative path from folder_path
-                try:
-                    rel_path = str(file_path.relative_to(folder_path))
-                except ValueError:
-                    continue  # Skip if file is not under folder_path
-
-                # -----------------------------------------------
-                # 1. Summary detection (special case)
-                # -----------------------------------------------
-                if 'summary' in full_path_lower:
-                    discovered.append((
-                        'Summary', rel_path, None, None, None,
-                        'サマリー', 'Summary'
-                    ))
-                    continue
-
-                # ------------------------------------------------
-                # 2. Revision forecast patterns (rvdf / rvfc files)
-                # ------------------------------------------------
-                if fname.endswith('ixbrl.htm'):
-                    if '-rvdf-' in fname:
-                        discovered.append((
-                            'DividendForecastRevision', rel_path, None, None, None,
-                            '配当予想修正', 'Dividend forecast revision'
-                        ))
-                        continue
-                    if '-rvfc-' in fname:
-                        discovered.append((
-                            'EarningsForecastRevision', rel_path, None, None, None,
-                            '業績予想修正', 'Earnings forecast revision'
-                        ))
-                        continue
-
-                # -----------------------------------------------
-                # 3. Parse attachment filename pattern
-                # -----------------------------------------------
-                # Look for pattern like: 0105010-qcci13-tse-...
-                # Extract the middle part (qcci13) which contains our codes
-                import re
-
-                # Pattern to match the attachment code part
-                pattern = r'\d+-([a-z]{2,4}\d{2})-tse-'
-                match = re.search(pattern, fname)
-
-                if not match:
-                    # Try qualitative pattern
-                    if 'qualitative' in full_path_lower:
-                        role_info = ATTACHMENT_SUFFIX_MAP['qualitative']
-                        discovered.append((
-                            role_info['role'], rel_path, None, None, None,
-                            role_info['ja'], role_info['en']
-                        ))
-                    continue
-
-                code_part = match.group(1)  # e.g., "qcci13"
-
-                # Parse the code part
-                parsed = self._parse_attachment_code(code_part)
-                if not parsed:
-                    continue
-                
-                period_prefix, consolidated, statement_code, layout_code = parsed
-                
-                # Look up statement role from the statement code
-                if statement_code in ATTACHMENT_SUFFIX_MAP:
-                    role_info = ATTACHMENT_SUFFIX_MAP[statement_code]
-                    discovered.append((
-                        role_info['role'], rel_path, period_prefix, consolidated, layout_code,
-                        role_info['ja'], role_info['en']
-                    ))
-
-        return discovered
-
-    def _parse_attachment_code(self, code_part: str) -> tuple[str, bool, str, int] | None:
-        """Parse attachment code like 'qcci13' into components.
-        
-        Returns: (period_prefix, consolidated, statement_code, layout_code)
-        Example: 'qcci13' -> ('q', True, 'ci', 13)
-        """
-        if len(code_part) < 4:
-            return None
-        
-        # Extract period/consolidation prefix (first 2 chars)
-        prefix = code_part[:2]
-        
-        # Map period prefix
-        period_map = {'ac': 'a', 'an': 'a', 'qc': 'q', 'qn': 'q', 'sc': 's', 'sn': 's'}
-        if prefix not in period_map:
-            # Handle other patterns like 'bnc', 'inc' - treat as annual consolidated
-            period_prefix = 'a'
-            consolidated = True
-        else:
-            period_prefix = period_map[prefix]
-            consolidated = prefix[1] == 'c'  # second char 'c' = consolidated, 'n' = non-consolidated
-        
-        # Extract statement code and layout code
-        # Pattern: [prefix][statement_code][layout_code]
-        # e.g., qcci13 -> qc + ci + 13
-        remainder = code_part[2:]  # Everything after the 2-char prefix
-        
-        # Extract layout code (trailing digits)
-        import re
-        layout_match = re.search(r'(\d+)$', remainder)
-        if not layout_match:
-            return None
-        
-        layout_code = int(layout_match.group(1))
-        statement_code = remainder[:layout_match.start()]  # Everything before the digits
-        
-        return period_prefix, consolidated, statement_code, layout_code
-
-    def _discover_sections_from_path(self, xbrl_path: Path) -> list[tuple[str, str, str, bool, int, str, str]]:
-        """Wrapper to handle directory or zip file path."""
-        if xbrl_path.is_dir():
-            return self._discover_sections(xbrl_path)
-
-        # Zip case – extract to temp dir
-        with tempfile.TemporaryDirectory() as temp_dir:
-            try:
-                with zipfile.ZipFile(xbrl_path, 'r') as zip_ref:
-                    zip_ref.extractall(temp_dir)
-                return self._discover_sections(Path(temp_dir))
-            except zipfile.BadZipFile:
-                return []  # Return empty list if zip is corrupted
 
     # -------------------------------------------------
     # Correction normalization helpers
@@ -832,16 +674,19 @@ class XBRLFilingLoader:
 
 def main():
     """Main function to load XBRL filings."""
-    print(f"Starting XBRL filing loading process...")
-    print(f"Maximum filings to load: {MAX_FILINGS_TO_LOAD}")
-    
     parser = argparse.ArgumentParser(description="Load XBRL filings into database")
     parser.add_argument("--company", help="Restrict loading to specific company_code", default=None)
-    parser.add_argument("--limit", type=int, help="Max filings to process", default=MAX_FILINGS_TO_LOAD)
+    parser.add_argument("--limit", type=int, help="Max filings to process (deprecated, processes all)", default=None)
     args = parser.parse_args()
 
+    print(f"Starting XBRL filing loading process...")
+    if args.limit:
+        print(f"Note: --limit {args.limit} ignored, processing all available filings")
+    if args.company:
+        print(f"Company filter: {args.company}")
+
     loader = XBRLFilingLoader()
-    loaded_count = loader.load_filings(max_count=args.limit, company_code=args.company)
+    loaded_count = loader.load_filings(company_code=args.company)
     
     print(f"\nXBRL filing loading completed. Total loaded: {loaded_count}")
 

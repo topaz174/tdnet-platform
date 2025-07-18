@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.database.utils.init_db import Disclosure, Base, engine
+from database.utils.init_db import Disclosure, Base, engine
 
 def sanitize_filename(filename):
     """

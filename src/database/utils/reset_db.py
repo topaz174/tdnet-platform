@@ -1,14 +1,14 @@
 from sqlalchemy import create_engine
-from init_db import Base
 import os
 import shutil
 import json
 from pathlib import Path
 import sys
 
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.database.utils.init_db import Base
 from config.config import DB_URL
 
 # Connect to database
@@ -26,7 +26,7 @@ if confirm.lower() != 'y':
     sys.exit()
 
 # Get PDF directory from config
-config_file = 'directories.json'
+config_file = project_root / 'config' / 'directories.json'
 if os.path.exists(config_file):
     with open(config_file, 'r') as f:
         config = json.load(f)

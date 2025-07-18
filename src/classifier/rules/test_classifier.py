@@ -11,8 +11,8 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy.orm import sessionmaker
-from src.database.utils.init_db import Disclosure, DisclosureLabel, engine
-from src.classifier.rules.classifier import classify_and_store_labels, classify_disclosure_title
+from database.utils.init_db import Disclosure, DisclosureLabel, engine
+from .classifier import classify_and_store_labels, classify_disclosure_title
 
 # ============================================================================
 # CONFIGURATION

@@ -28,21 +28,8 @@ from datetime import datetime
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Database configuration imports
-try:
-    from tdnet_scraper.config.config import DB_CONFIG
-    db_config = DB_CONFIG
-except ImportError:
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    db_config = {
-        'user': os.getenv('TDNET_DB_USER', os.getenv('DB_USER', 'postgres')),
-        'password': os.getenv('TDNET_DB_PASSWORD', os.getenv('DB_PASSWORD', '')),
-        'host': os.getenv('TDNET_DB_HOST', os.getenv('DB_HOST', 'localhost')),
-        'port': os.getenv('TDNET_DB_PORT', os.getenv('DB_PORT', '5432')),
-        'database': os.getenv('TDNET_DB_NAME', os.getenv('DB_NAME', 'tdnet'))
-    }
+# Import unified config
+from config.config import DB_CONFIG
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -54,14 +41,14 @@ class MigrationGenerator:
         self.dry_run = dry_run
         
         # Database URLs
-        self.source_db_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
-        self.temp_db_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{self.temp_db_name}"
+        self.source_db_url = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+        self.temp_db_url = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{self.temp_db_name}"
         
         # File paths
         self.target_schema_file = project_root / "target_schema.sql"
         self.migration_sql_file = project_root / "migration_output.sql"
         
-        logger.info(f"Source DB: {db_config['database']}")
+        logger.info(f"Source DB: {DB_CONFIG['database']}")
         logger.info(f"Temp DB: {self.temp_db_name}")
         logger.info(f"Dry run: {self.dry_run}")
     
@@ -70,7 +57,7 @@ class MigrationGenerator:
         logger.info(f"Creating temporary database: {self.temp_db_name}")
         
         # Connect to PostgreSQL server to create database
-        server_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/postgres"
+        server_url = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/postgres"
         
         try:
             import psycopg2
@@ -261,7 +248,7 @@ def downgrade() -> None:
             import psycopg2
             from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
             
-            server_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/postgres"
+            server_url = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/postgres"
             conn = psycopg2.connect(server_url)
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             cursor = conn.cursor()
@@ -341,10 +328,10 @@ def main():
     except (subprocess.CalledProcessError, FileNotFoundError):
         try:
             subprocess.run([sys.executable, '-m', 'migra', '--help'], capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            logger.error("migra is not installed or not in PATH")
-            logger.error("Install with: pip install migra")
-            return 1
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logger.error("migra is not installed or not in PATH")
+        logger.error("Install with: pip install migra")
+        return 1
     
     try:
         subprocess.run(['psql', '--version'], capture_output=True, check=True)

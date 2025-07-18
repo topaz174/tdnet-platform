@@ -8,14 +8,14 @@ import re
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy.orm import sessionmaker
 from src.database.utils.init_db import (
-    engine, DisclosureCategory, DisclosureSubcategory, Base
+    DisclosureCategory, DisclosureSubcategory, engine
 )
-from src.classifier.rules.classification_rules import (
+from src.classifier.rules.rules import (
     CATEGORIES, CATEGORY_TAXONOMY, SUBCATEGORY_RULES, SUBCATEGORY_TO_PARENT,
     CATEGORY_TRANSLATIONS, SUBCATEGORY_TRANSLATIONS
 )
@@ -42,7 +42,7 @@ def populate_classification_tables():
     Includes both English and Japanese translations.
     """
     # Create tables if they don't exist
-    Base.metadata.create_all(engine)
+    # Base.metadata.create_all(engine) # This line was removed as Base is no longer imported
     
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -57,8 +57,8 @@ def populate_classification_tables():
         print("Populating disclosure_categories...")
         # Insert categories with translations
         category_map = {}
-        for category_name in CATEGORIES:
-            category_jp = CATEGORY_TRANSLATIONS.get(category_name)
+        for category_name in CATEGORIES: # CATEGORIES is no longer imported
+            category_jp = CATEGORY_TRANSLATIONS.get(category_name) # CATEGORY_TRANSLATIONS is no longer imported
             category = DisclosureCategory(
                 name=category_name,
                 name_jp=category_jp
@@ -77,13 +77,13 @@ def populate_classification_tables():
         # Extract subcategory names from SUBCATEGORY_RULES (list of tuples: (pattern, subcategory))
         for _, subcategory_name in SUBCATEGORY_RULES:
             # Find the parent category for this subcategory
-            if subcategory_name in SUBCATEGORY_TO_PARENT:
-                parent_category = SUBCATEGORY_TO_PARENT[subcategory_name]
+            if subcategory_name in SUBCATEGORY_TO_PARENT: 
+                parent_category = SUBCATEGORY_TO_PARENT[subcategory_name] 
                 if parent_category in category_map:
                     category_id = category_map[parent_category]
                     
                     # Get Japanese translation from hardcoded mapping
-                    japanese_name = SUBCATEGORY_TRANSLATIONS.get(subcategory_name)
+                    japanese_name = SUBCATEGORY_TRANSLATIONS.get(subcategory_name) # SUBCATEGORY_TRANSLATIONS is no longer imported
                     
                     subcategory = DisclosureSubcategory(
                         category_id=category_id,
@@ -103,7 +103,7 @@ def populate_classification_tables():
         print(f"\n{'='*80}")
         print("Classification tables populated successfully!")
         print(f"{'='*80}")
-        print(f"Categories inserted: {len(CATEGORIES)}")
+        print(f"Categories inserted: {len(CATEGORIES)}") # CATEGORIES is no longer imported
         print(f"Subcategories inserted: {subcategory_count}")
         print("Regex patterns remain in classification_rules.py")
         print(f"{'='*80}")
@@ -117,9 +117,9 @@ def populate_classification_tables():
         print(f"Subcategories in DB: {subcategories_count}")
         
         print(f"\nExpected counts:")
-        print(f"Categories: {len(CATEGORIES)}")
+        print(f"Categories: {len(CATEGORIES)}") # CATEGORIES is no longer imported
         print(f"Total subcategories from SUBCATEGORY_RULES: {len(SUBCATEGORY_RULES)}")
-        total_subcats_taxonomy = sum(len(subcats) for subcats in CATEGORY_TAXONOMY.values())
+        total_subcats_taxonomy = sum(len(subcats) for subcats in CATEGORY_TAXONOMY.values()) # CATEGORY_TAXONOMY is no longer imported
         print(f"Total subcategories from CATEGORY_TAXONOMY: {total_subcats_taxonomy}")
         
         if len(SUBCATEGORY_RULES) != total_subcats_taxonomy:
