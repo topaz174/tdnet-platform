@@ -15,44 +15,6 @@ This platform consists of several modular components:
 - **Database** (`src/database/`): Schema management, migrations, and utilities
 - **Analytics** (`src/analytics/`): Advanced analytics, AI agents, and retrieval systems
 
-### Directory Structure
-
-```
-src/
-├── scraper/           # TDnet data collection
-│   ├── tdnet_search/  # TDnet search scraping
-│   ├── core/          # Core scraping logic
-│   └── utils/         # Scraping utilities
-├── quantitative/      # Numeric data processing
-│   ├── xbrl/          # XBRL parsing and processing
-│   ├── etl/           # ETL for numeric data
-│   └── parsers/       # Financial statement parsers
-├── qualitative/       # Text data processing
-│   ├── extraction/    # Text extraction pipelines
-│   ├── pipelines/     # Processing pipelines
-│   └── analytics/     # Text analytics and embeddings
-├── classifier/        # Disclosure classification
-│   ├── rules/         # Rule-based classification
-│   └── ml/           # Machine learning classification
-├── database/          # Database management
-│   ├── migrations/    # Database schema migrations
-│   ├── views/         # Database views
-│   ├── models/        # Data models
-│   └── utils/         # Database utilities
-├── analytics/         # Advanced analytics
-│   ├── financial/     # Financial analytics
-│   ├── retrieval/     # Information retrieval
-│   └── agents/        # AI agents
-├── interface/         # API and UI interfaces
-│   ├── api/          # REST API endpoints
-│   ├── web/          # Web interface
-│   └── cli/          # Command line interface
-└── shared/           # Shared utilities
-    ├── utils/        # General utilities
-    ├── config/       # Configuration management
-    └── logging/      # Logging utilities
-```
-
 ## Installation
 
 1. Clone the repository
